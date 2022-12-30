@@ -1,7 +1,7 @@
 import keras
-import argparse
+from argument import create_parser
 import numpy as np
-from fgsm import FGSM
+from fgsm_attack import FGSM
 from utils import load_data
 
 
@@ -61,7 +61,7 @@ def main(opts):
 
 if __name__ == "__main__":
     # Argument
-    parser = argparse.ArgumentParser()
+    parser = create_parser()
     opts = parser.parse_args()
 
     main(opts)
