@@ -1,0 +1,15 @@
+# cache
+__pycache__/
+*.pyc
+temp.py
+
+# datasets
+dataset/*
+!dataset/plates.pkl
+!dataset/profile_features500.pkl
+!dataset/trajs_with_speed500.pkl
+!dataset/trajs_without_speed500.pkl
+
+# models and logs
+models/
+logs/
