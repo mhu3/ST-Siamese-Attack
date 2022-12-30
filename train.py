@@ -5,7 +5,7 @@ import tensorflow as tf
 # from sklearn.model_selection import train_test_split
 
 from argument import create_parser
-from utils import create_dir, load_data
+from utils import create_dir, load_data, normalize_trajectory_data
 from models import build_lstm_siamese
 
 
@@ -37,14 +37,7 @@ def main(opts):
         X_train, y_train  = load_data(opts.data_path + 'training_set.pkl')
         X_test_seen, y_test_seen = load_data(opts.data_path + 'testing_set_seen.pkl')
         X_test_unseen, y_test_unseen = load_data(opts.data_path + 'testing_set_unseen.pkl')
-    
-    def normalize_trajectory_data(X):
-        X = X.astype(np.float32)
-        # Normalize data
-        X[:, :, :, 0] = X[:, :, :, 0] / 49    # x
-        X[:, :, :, 1] = X[:, :, :, 1] / 92    # y
-        X[:, :, :, 2] = X[:, :, :, 2] / 288   # t
-        return X
+
     # Normalize data
     X_train = normalize_trajectory_data(X_train)
     X_test_seen = normalize_trajectory_data(X_test_seen)

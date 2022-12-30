@@ -15,6 +15,23 @@ def load_data(file_path):
     return pickle.load(bz2.open(file_path, 'rb'))
 
 
+### For data normalization
+def normalize_trajectory_data(X):
+    X = X.astype(np.float32)
+    # Normalize data
+    X[:, :, :, 0] = X[:, :, :, 0] / 49    # x
+    X[:, :, :, 1] = X[:, :, :, 1] / 92    # y
+    X[:, :, :, 2] = X[:, :, :, 2] / 288   # t
+    return X
+
+def denormalize_trajectory_data(X):
+    # Denormalize data
+    X[:, :, :, 0] = X[:, :, :, 0] * 49    # x
+    X[:, :, :, 1] = X[:, :, :, 1] * 92    # y
+    X[:, :, :, 2] = X[:, :, :, 2] * 288   # t
+    X = np.round(X).astype(np.int32)
+    return X
+
 ### For data visualization
 def visualize_trajectory(traj, linetype='o-'):
     """Draw given trajectory
