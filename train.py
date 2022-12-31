@@ -6,7 +6,7 @@ import tensorflow as tf
 
 from argument import create_parser
 from utils import create_dir, load_data, normalize_trajectory_data
-from models import build_lstm_siamese
+from models import build_lstm_siamese, load_model
 
 
 def main(opts):
@@ -52,8 +52,8 @@ def main(opts):
     model.summary()
 
     # Continue training
-    # model = keras.models.load_model(opts.model_path + 'model_' + tag + '_best.h5')
-    
+    # model = load_model(opts.model_path + 'model_' + tag + '_best.h5')
+
     # Start training
     callbacks = \
     [
