@@ -49,13 +49,12 @@ class CWAttack:
         self.CONST_FACTOR = const_factor
         self.INDEPEDENT_CHANNELS = independent_channels
 
-        self.I_KNOW_WHAT_I_AM_DOING_AND_WANT_TO_OVERRIDE_THE_PRESOFTMAX_CHECK = False
-
         self.grad = self.gradient_descent(sess, model, sample_shape)
+
 
     def gradient_descent(self, sess, model, shape):
         # Variables and placeholders
-        # the variable to optimize over
+        # the variable w to optimize over
         modifier = tf.Variable(np.zeros(shape, dtype=np.float32))
         # the variables we're going to hold, use for efficiency
         original = tf.Variable(np.zeros(shape, dtype=np.float32))
@@ -73,7 +72,7 @@ class CWAttack:
         assign_label = tf.placeholder(np.float32, (1, self.model.output.shape[1]))
         const = tf.placeholder(tf.float32, [])
 
-        # variables to initialize when we run
+        # setup to assign the variables with placeholders
         setup_modifier = tf.assign(modifier, assign_modifier)
         setup = []
         setup.append(tf.assign(changable, assign_changable))
@@ -82,29 +81,36 @@ class CWAttack:
         setup.append(tf.assign(start, assign_start))
         setup.append(tf.assign(label, assign_label))
         
-        # Prediction
-        new_sample = (tf.tanh(modifier + start)/2)*changable + original*(1-changable)
+        # Predictions
+        new_sample = changable * ((tf.tanh(modifier + start) + 1)/2) + \
+                     (1-changable) * original
         output = model.predict([new_sample])
         
         # Define loss
-        # target loss
-        real = tf.reduce_sum((label)*output, 1)
-        other = tf.reduce_max((1-label)*output - (label*10000), 1)
+        # TODO TEMP FIX
+        # 1, target loss
+        # real = tf.reduce_sum((label) * output, 1) # Z(t)
+        # other = tf.reduce_max((1-label) * output, 1) # max Z(i) (i != t)
+        real = (output)
+        other = (1 - output)
+
         # if targetted, optimize for making the other class most likely
+        kappa = 0.01
+        confidence = 0.01
         if self.TARGETED:
-            loss1 = tf.maximum(0.0, other - real + 0.01)
+            loss1 = tf.maximum(0, other - real + kappa) # + 0.01)
         # if untargeted, optimize for making this class least likely.
         else:
-            loss1 = tf.maximum(0.0, real - other + 0.01)
+            loss1 = tf.maximum(0, real - other + kappa) # + 0.01)
 
-        # change loss
+        # 2, loss
         loss2 = tf.reduce_sum( tf.square(new_sample - tf.tanh(sample)/2) )
 
         # sum up the losses
         loss = const*loss1 + loss2
         
         # Gradient
-        outgrad = tf.gradients(loss, [modifier])[0]
+        grad = tf.gradients(loss, [modifier])[0]
         
         # setup the adam optimizer and keep track of variables we're creating
         start_vars = set(x.name for x in tf.global_variables())
@@ -116,10 +122,11 @@ class CWAttack:
         init = tf.variables_initializer(var_list=[modifier, changable, start, original, sample, label] 
                                                  + new_vars)
 
+        # Actual optimization process
         def optimize(samples, labels, starts, valid, const):
             # convert to tanh-space
-            samples = np.arctanh( np.array(samples)*1.999999 )
-            starts = np.arctanh( np.array(starts)*1.999999 )
+            samples = np.arctanh( np.array(samples) * 2 - 1 ) # *1.999999 )
+            starts = np.arctanh( np.array(starts) * 2 - 1 ) # *1.999999 )
 
             # initialize the variables
             sess.run(init)
@@ -143,22 +150,25 @@ class CWAttack:
                         print(step, *sess.run((loss1, loss2), feed_dict=feed_dict))
 
                     # perform the update step
-                    _, works, scores = sess.run([train, loss1, output], feed_dict=feed_dict)
+                    _, success, scores = sess.run([train, loss1, output], feed_dict=feed_dict)
 
+                    '''
+                    # presoftmax score check
                     if np.all(scores >= -0.0001) and np.all(scores <= 1.0001):
                         if np.allclose(np.sum(scores,axis=1), 1.0, atol=1e-3):
                             if not self.I_KNOW_WHAT_I_AM_DOING_AND_WANT_TO_OVERRIDE_THE_PRESOFTMAX_CHECK:
                                 raise Exception("The output of model.predict should return the pre-softmax layer. It looks like you are returning the probability vector (post-softmax). If you are sure you want to do that, set attack.I_KNOW_WHAT_I_AM_DOING_AND_WANT_TO_OVERRIDE_THE_PRESOFTMAX_CHECK = True")
-
-                    if works < 0.0001 and self.ABORT_EARLY:
+                    '''
+                    # if this step is successful
+                    if success < 0 and self.ABORT_EARLY:
                         # it worked previously, restore the old value and finish
                         self.sess.run(setup_modifier, {assign_modifier: old_modifier})
-                        grads, scores, new_samples = sess.run((outgrad, output, new_sample), feed_dict=feed_dict)
+                        grads, scores, new_samples = sess.run((grad, output, new_sample), feed_dict=feed_dict)
 
-                        l2s = np.square(new_samples - np.tanh(samples)/2).sum(axis=(1, 2, 3))
+                        # l2s = np.square(new_samples - np.tanh(samples)/2).sum(axis=(1, 2, 3))
                         return grads, scores, new_samples, const
 
-                # we didn't succeed, increase constant and try again
+                # we didn't succeed within iteration, increase constant and try again
                 const *= self.CONST_FACTOR
             # cannot find a solution within the largest constant
             return None
@@ -166,7 +176,7 @@ class CWAttack:
         return optimize
 
 
-    def attack(self, samples, targets):
+    def l0_attack(self, samples, targets):
         """
         Perform the L_0 attack on the given samples for the given targets.
             If self.targeted is true, then the targets represents the target labels.
@@ -175,13 +185,13 @@ class CWAttack:
         # Attack each individual sample
         adv_samples = []
         for i in tqdm(range(len(samples))):
-            adv_sample = self.attack_single(samples[i], targets[i])
+            adv_sample = self.l0_attack_single(samples[i], targets[i])
             adv_samples.append(adv_sample)
 
         return np.array(adv_samples)
 
 
-    def attack_single(self, sample, target):
+    def l0_attack_single(self, sample, target):
         """
         Run the attack on a single sample and label
         """
