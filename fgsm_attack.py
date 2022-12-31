@@ -33,25 +33,25 @@ class FGSM():
                 loss = loss_object(labels, prediction)
 
             # Get the gradients of the loss w.r.t to the input
-            gradient = tape.gradient(loss, pair_input)
+            gradients = tape.gradient(loss, pair_input)
             # Get the sign of the gradients to create the perturbation
-            signed_grad = tf.sign(gradient)
+            signed_grads = tf.sign(gradients)
 
             # Constraint on sequential data
             # we should not change the padding
-            for s in range(signed_grad.shape[0]):
-                # Find rows with all 0s
-                np_grad = signed_grad[s].numpy()
-                trajs, rows = np.where( np.sum(np_grad, axis=2) == 0 )
-                np_grad[trajs, rows, :] = 0
-                
-                # Avoid changing time
-                np_grad[:, :, 2] = 0
-                
-                # Perturb the sample
-                delta = eps * tf.convert_to_tensor(np_grad)
-                pair_input[s] = pair_input[s] + delta
+            np_grads = signed_grads.numpy()
+            for i in range(np_grads.shape[0]):
+                # find rows with all 0s
+                trajs, rows = np.where( np.sum(np_grads[i], axis=2) == 0 )
+                np_grads[i, trajs, rows, :] = 0
 
-        return pair_input
+                # avoid changing time
+                np_grads[i, :, :, 2] = 0
+
+            # Perturb the input
+            signed_grads = tf.convert_to_tensor(np_grads)
+            pair_input = pair_input + eps * signed_grads
+
+        return pair_input.numpy()
     
     # def l2_attack(model, pairs, labels, eps=0.1, iteration=10, p_norm = 2):
