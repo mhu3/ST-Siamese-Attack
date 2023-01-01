@@ -17,8 +17,7 @@ def create_fgsm_attack_samples(model, samples, labels, attack_type="linf"):
     if attack_type == "linf":
         adv_samples = attack.linf_attack(samples, labels)
     elif attack_type == "l2":
-        pass
-        # adv_samples = attack.l2_attack(samples, labels)
+        adv_samples = attack.l2_attack(samples, labels)
     elif attack_type == "l0":
         pass
         # adv_samples = attack.l0_attack(samples, labels)
@@ -74,8 +73,8 @@ def main(opts):
     # Create adversarial samples
     # X_cw_l0_adv_seen = create_cw_attack_samples(model, X_test_seen, y_test_seen, "l0")
     # X_cw_l0_adv_unseen = create_cw_attack_samples(model, X_test_seen, y_test_seen, "l0")
-    X_fgsm_linf_adv_seen = create_fgsm_attack_samples(model, X_test_seen, y_test_seen, "linf")
-    X_fgsm_linf_adv_unseen = create_fgsm_attack_samples(model, X_test_unseen, y_test_unseen, "linf")
+    X_fgsm_linf_adv_seen = create_fgsm_attack_samples(model, X_test_seen, y_test_seen, "l2")
+    X_fgsm_linf_adv_unseen = create_fgsm_attack_samples(model, X_test_unseen, y_test_unseen, "l2")
 
     # Test attack
     # original samples

@@ -60,7 +60,6 @@ class FGSM():
             # Clip the diff to be in the range of [-1/49, 1/49], [-1/92, 1/92] on x, y 
             diff[:, :, :, 0] = np.clip(diff[:, :, :, 0], -1/49, 1/49)
             diff[:, :, :, 1] = np.clip(diff[:, :, :, 1], -1/92, 1/92)
-
             diff = tf.convert_to_tensor(diff)
             
             # Add the difference to the original input
@@ -68,7 +67,7 @@ class FGSM():
 
         return pairs_adv.numpy()
 
-    def l2_attack(model, pairs, labels, eps=0.1, iteration=10, p_norm = 2):
+    def l2_attack(self, pairs, labels, eps=0.001, iteration=10, p_norm=2):
         # normalization factor  49, 92
         # Binary cross entropy (0/1)
         loss_object = tf.keras.losses.BinaryCrossentropy()
@@ -88,7 +87,7 @@ class FGSM():
                 tape.watch(pairs_adv)
 
                 # Compute loss
-                prediction = model(pairs_adv)
+                prediction = self.model(pairs_adv)
                 loss = loss_object(labels, prediction)
 
             # Get the gradients of the loss w.r.t to the input
@@ -122,7 +121,6 @@ class FGSM():
             # Clip the diff to be in the range of [-1/49, 1/49], [-1/92, 1/92] on x, y 
             diff[:, :, :, 0] = np.clip(diff[:, :, :, 0], -1/49, 1/49)
             diff[:, :, :, 1] = np.clip(diff[:, :, :, 1], -1/92, 1/92)
-
             diff = tf.convert_to_tensor(diff)
             
             # Add the difference to the original input
