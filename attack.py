@@ -34,18 +34,23 @@ def create_cw_attack_samples(model, samples, labels, attack_type="linf"):
     # CW attack requires the model output to be logits (not softmax)
     # model_log = keras.models.Model(inputs=model.input, outputs=model.layers[-2].output)
     # Create attack class
-    sess = keras.backend.get_session()
-    attack = CWAttack(sess, model, samples.shape[1:])
+    attack = CWAttack(model, samples.shape[1:], batch_size=1024, 
+                      binary_search_steps=1, max_iterations=20, 
+                      initial_const=1)
     
     # Create adversarial samples
     if attack_type == "linf":
         pass
         # adv_samples = attack.linf_attack(samples, labels)
     elif attack_type == "l2":
-        pass
-        # adv_samples = attack.l2_attack(samples, labels)
+        adv_samples = attack.l2_attack(samples, labels)
     elif attack_type == "l0":
-        adv_samples = attack.l0_attack(samples[0:1], labels)
+        pass
+        # adv_samples = attack.l0_attack(samples[0:1], labels)
+
+    # Validate the adversarial samples 
+    adv_samples = denormalize_trajectory_data(adv_samples) # fit back to grid
+    adv_samples = normalize_trajectory_data(adv_samples) # normalize again        
 
     return adv_samples
     
@@ -64,29 +69,27 @@ def main(opts):
     # Normalize data
     X_test_seen = normalize_trajectory_data(X_test_seen)
     X_test_unseen = normalize_trajectory_data(X_test_unseen)
-    # Split trajectories into multiple input list
-    # X_test_seen = [X_test_seen[:, i, :, :] for i in range(X_test_seen.shape[1])]
-    # X_test_unseen = [X_test_unseen[:, i, :, :] for i in range(X_test_unseen.shape[1])]
 
     # Load model
     model = load_model(opts.model_path + 'model_500_plates_8_days_all_traj_best.h5')
     
     # Create adversarial samples
-    # X_cw_l0_adv_seen = create_cw_attack_samples(model, X_test_seen, y_test_seen, "l0")
-    # X_cw_l0_adv_unseen = create_cw_attack_samples(model, X_test_seen, y_test_seen, "l0")
-    X_fgsm_linf_adv_seen = create_fgsm_attack_samples(model, X_test_seen, y_test_seen, "linf")
-    X_fgsm_linf_adv_unseen = create_fgsm_attack_samples(model, X_test_unseen, y_test_unseen, "linf")
+    X_cw_adv_seen = create_cw_attack_samples(model, X_test_seen, y_test_seen, "l2")
+    X_cw_adv_unseen = create_cw_attack_samples(model, X_test_unseen, y_test_unseen, "l2")
+    # X_fgsm_linf_adv_seen = create_fgsm_attack_samples(model, X_test_seen, y_test_seen, "linf")
+    # X_fgsm_linf_adv_unseen = create_fgsm_attack_samples(model, X_test_unseen, y_test_unseen, "linf")
 
     # Test attack
     # original samples
     loss_seen, acc_seen = model.evaluate(X_test_seen, y_test_seen)
     loss_unseen, acc_unseen = model.evaluate(X_test_unseen, y_test_unseen)
     # adversarial samples
-    # loss_cw_l0_adv_seen, acc_cw_l0_adv_seen = model.evaluate(X_cw_l0_adv_seen, y_test_seen)
-    # loss_cw_l0_adv_unseen, acc_cw_l0_adv_unseen = model.evaluate(X_cw_l0_adv_unseen, y_test_unseen)
-    loss_fgsm_linf_adv_seen, acc_fgsm_linf_adv_seen = model.evaluate(X_fgsm_linf_adv_seen, y_test_seen)
-    loss_fgsm_linf_adv_unseen, acc_fgsm_linf_adv_unseen = model.evaluate(X_fgsm_linf_adv_unseen, y_test_unseen)
+    loss_cw_adv_seen, acc_cw_adv_seen = model.evaluate(X_cw_adv_seen, y_test_seen)
+    loss_cw_adv_unseen, acc_cw_adv_unseen = model.evaluate(X_cw_adv_unseen, y_test_unseen)
+    # loss_fgsm_linf_adv_seen, acc_fgsm_linf_adv_seen = model.evaluate(X_fgsm_linf_adv_seen, y_test_seen)
+    # loss_fgsm_linf_adv_unseen, acc_fgsm_linf_adv_unseen = model.evaluate(X_fgsm_linf_adv_unseen, y_test_unseen)
 
+    
 
 if __name__ == "__main__":
     # Argument

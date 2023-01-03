@@ -128,7 +128,7 @@ def create_dataset(raw_trajs, plates, num_samples,
     # Create total dataset
     traj_feature_size = len( get_trajectories(raw_trajs, plates, 0, 0, 'seek')[0][0] )
     X = np.zeros((num_samples, num_trajs*2, padding_length, traj_feature_size))
-    y = np.zeros(num_samples)
+    y = np.zeros((num_samples, 1))
 
     # Positive samples
     for i in range(num_pos_samples):
