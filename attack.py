@@ -1,7 +1,9 @@
 import keras
 import numpy as np
+import matplotlib.pyplot as plt
 
-from utils import load_data, normalize_trajectory_data, denormalize_trajectory_data
+from utils import load_data, normalize_trajectory_data, denormalize_trajectory_data, \
+                  visualize_trajectory
 from argument import create_parser
 from models import load_model
 
@@ -30,13 +32,11 @@ def create_fgsm_attack_samples(model, samples, labels, attack_type="linf"):
     return adv_samples
 
 
-def create_cw_attack_samples(model, samples, labels, attack_type="linf"):
-    # CW attack requires the model output to be logits (not softmax)
-    # model_log = keras.models.Model(inputs=model.input, outputs=model.layers[-2].output)
+def create_cw_attack_samples(model, samples, labels, attack_type="l0"):
     # Create attack class
-    attack = CWAttack(model, samples.shape[1:], batch_size=1024, 
-                      binary_search_steps=1, max_iterations=20, 
-                      initial_const=1)
+    attack = CWAttack(model, batch_size=1024, learning_rate=1e-2,
+                      max_iterations=20, initial_const=1, largest_const=1000,
+                      binary_search_steps=1, const_factor=5.0)
     
     # Create adversarial samples
     if attack_type == "linf":
@@ -45,8 +45,7 @@ def create_cw_attack_samples(model, samples, labels, attack_type="linf"):
     elif attack_type == "l2":
         adv_samples = attack.l2_attack(samples, labels)
     elif attack_type == "l0":
-        pass
-        # adv_samples = attack.l0_attack(samples[0:1], labels)
+        adv_samples = attack.l0_attack(samples, labels)
 
     # Validate the adversarial samples 
     adv_samples = denormalize_trajectory_data(adv_samples) # fit back to grid
@@ -74,22 +73,56 @@ def main(opts):
     model = load_model(opts.model_path + 'model_500_plates_8_days_all_traj_best.h5')
     
     # Create adversarial samples
-    X_cw_adv_seen = create_cw_attack_samples(model, X_test_seen, y_test_seen, "l2")
-    X_cw_adv_unseen = create_cw_attack_samples(model, X_test_unseen, y_test_unseen, "l2")
+    # X_cw_adv_seen = create_cw_attack_samples(model, X_test_seen, y_test_seen, "l2")
+    # X_cw_adv_unseen = create_cw_attack_samples(model, X_test_unseen, y_test_unseen, "l2")
+    X_cw_adv_seen = create_cw_attack_samples(model, X_test_seen[507:508], y_test_seen[507:508], "l0")
+    # X_cw_adv_unseen = create_cw_attack_samples(model, X_test_unseen, y_test_unseen, "l0")
     # X_fgsm_linf_adv_seen = create_fgsm_attack_samples(model, X_test_seen, y_test_seen, "linf")
     # X_fgsm_linf_adv_unseen = create_fgsm_attack_samples(model, X_test_unseen, y_test_unseen, "linf")
 
     # Test attack
     # original samples
-    loss_seen, acc_seen = model.evaluate(X_test_seen, y_test_seen)
-    loss_unseen, acc_unseen = model.evaluate(X_test_unseen, y_test_unseen)
+    loss_seen, acc_seen = model.evaluate(X_test_seen[507:508], y_test_seen[507:508])
+    # loss_unseen, acc_unseen = model.evaluate(X_test_unseen, y_test_unseen)
     # adversarial samples
-    loss_cw_adv_seen, acc_cw_adv_seen = model.evaluate(X_cw_adv_seen, y_test_seen)
-    loss_cw_adv_unseen, acc_cw_adv_unseen = model.evaluate(X_cw_adv_unseen, y_test_unseen)
+    loss_cw_adv_seen, acc_cw_adv_seen = model.evaluate(X_cw_adv_seen, y_test_seen[507:508])
+    # loss_cw_adv_unseen, acc_cw_adv_unseen = model.evaluate(X_cw_adv_unseen, y_test_unseen)
     # loss_fgsm_linf_adv_seen, acc_fgsm_linf_adv_seen = model.evaluate(X_fgsm_linf_adv_seen, y_test_seen)
     # loss_fgsm_linf_adv_unseen, acc_fgsm_linf_adv_unseen = model.evaluate(X_fgsm_linf_adv_unseen, y_test_unseen)
 
-    
+    # Visualize result
+    # # print the unseen prediction
+    # print(y_test_seen[:10].T)
+    # print((model.predict(X_test_seen[:10, :, :, :])).T)
+    # print((model.predict(X_cw_adv_seen[:10, :, :, :])).T)
+
+    # # print the unseen prediction
+    # print(y_test_unseen[:10].T)
+    # print((model.predict(X_test_unseen[:10, :, :, :])).T)
+    # print((model.predict(X_cw_adv_unseen[:10, :, :, :])).T)
+
+    visualize_attack_result(X_test_seen[507:508], X_cw_adv_seen, plate_idx=0)
+    # visualize_attack_result(X_test_unseen, X_cw_adv_unseen, plate_idx=2)
+
+
+def visualize_attack_result(X_ori, X_adv, plate_idx, fig_name="attack_result"):
+    # denormalize the data
+    X_ori = denormalize_trajectory_data(X_ori)
+    X_adv = denormalize_trajectory_data(X_adv)
+
+    # Plot the trajectories
+    plt.figure(figsize=(50, 30))
+    plt.subplots_adjust(hspace=0.5)
+    for t in range(X_ori.shape[1]):
+        plt.subplot(4, 5, t+1)
+
+        # Plot the original trajectory and the adversarial trajectory
+        visualize_trajectory(X_ori[plate_idx, t], 'o-', False)
+        visualize_trajectory(X_adv[plate_idx, t], 'r-', False)
+        plt.legend(['original', 'adversarial'])
+
+    plt.savefig(fig_name + '.png')
+
 
 if __name__ == "__main__":
     # Argument

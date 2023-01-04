@@ -5,18 +5,17 @@ from cw_attack_utils import to_tanh_space, from_tanh_space, set_with_mask
 
 
 class CWAttack:
-    def __init__(self, model, sample_shape, batch_size=256,
-                 binary_search_steps=5,
-                 targeted = False, learning_rate = 1e-2,
-                 max_iterations = 1000, abort_early = True,
-                 initial_const = 1e-3, largest_const = 2e6,
-                 reduce_const = False, const_factor = 2.0
+    def __init__(self, model, targeted=False, 
+                 batch_size=256, learning_rate=1e-2,
+                 max_iterations=1000, abort_early=True,
+                 initial_const=1e-3, largest_const=1e6,
+                 binary_search_steps=5, const_factor=2.0
                 ):
-        """ The optimized attack. 
+        """ The CW attack class. 
         Args:
-            sess: TF session
             model: Instance of the Model class
             targeted: True if we should perform a targetted attack, False otherwise.
+            batch_size: Number of attacks to run simultaneously.
             learning_rate: The learning rate for the attack algorithm. Smaller values
                            produce better results but are slower to converge.
             max_iterations: The maximum number of iterations to perform gradient descent. 
@@ -28,34 +27,27 @@ class CWAttack:
                            very small value (but positive).
             largest_const: The largest constant c to use until we report failure. Should
                            be set to a very large value.
-            reduce_const: Try to lower c each iteration; faster to set to false.
+            binary_search_steps: The number of times we perform binary search to find the
+                                 optimal c. (For l2 attack)
             const_factor: The factor f at which we should increase the constant, when the
                           previous constant failed. Should be greater than one, smaller 
-                          is better.
-            independent_channels: Set to false optimizes for number of pixels changed,
-                                  set to true (not recommended) returns number of channels
-                                  changed.
-        Returns:
-            adversarial examples for the supplied model.
+                          is better. (For l0 attack)
         """
         self.model = model
-        self.batch_size = batch_size
-
         self.targeted = targeted
-
+        self.batch_size = batch_size
         self.learning_rate = learning_rate
+
         self.max_iterations = max_iterations
         self.abort_early = abort_early
 
         self.initial_const = initial_const
-
+        self.largest_const = largest_const
         self.binary_search_steps = binary_search_steps
-
-        self.LARGEST_CONST = largest_const
-        self.REDUCE_CONST = reduce_const
-        self.CONST_FACTOR = const_factor
+        self.const_factor = const_factor
 
         self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
+
 
     def gradient(self, x_original, valid_mask, 
                  x_start_tanh, modifier, 
@@ -81,12 +73,12 @@ class CWAttack:
             
             # Compute loss
             y_hat = self.model(x_new)
-            loss, l2_dist = \
+            loss, target_loss, l2_dist = \
                 self.l2_loss(x_original, x_new, y, y_hat, const, kappa=0.01)
 
         # Compute gradients
         grads = tape.gradient(loss, x_new_tanh)
-        return x_new, y_hat, grads, loss, l2_dist
+        return x_new, y_hat, grads, loss, target_loss, l2_dist
 
     def l2_loss(self, x, x_new, y, y_hat, const, kappa):
         # Define loss
@@ -100,19 +92,19 @@ class CWAttack:
 
         # if targetted, optimize for making the other class most likely
         if self.targeted:
-            loss1 = tf.maximum(0, other - real + kappa) # + 0.01)
+            target_loss = tf.maximum(0, other - real + kappa) # + 0.01)
         # if untargeted, optimize for making this class least likely.
         else:
-            loss1 = tf.maximum(0, real - other + kappa) # + 0.01)
+            target_loss = tf.maximum(0, real - other + kappa) # + 0.01)
 
         # 2, Perturbation loss (L2)
         l2_dist = tf.reduce_sum( tf.square(x_new - x), 
-                               list(range(1, len(x.shape))) )
+                                 list(range(1, len(x.shape))) )
 
         # sum up the losses
-        loss = const*loss1 + l2_dist
+        loss = const*target_loss + l2_dist
 
-        return loss, l2_dist
+        return loss, target_loss, l2_dist
 
     
     def l2_attack(self, samples, labels):
@@ -162,13 +154,13 @@ class CWAttack:
 
         # Placeholder variables
         # for binary search of the const
-        lower_bound = tf.zeros(shape[:1])
-        upper_bound = tf.ones(shape[:1]) * 1e10
         const = tf.ones(shape[:1]) * self.initial_const
+        lower_bound = tf.zeros(shape[:1])
+        upper_bound = tf.ones(shape[:1]) * self.largest_const
         # for best values
         best_l2 = tf.fill(shape[:1], 1e10)
         best_label = tf.fill(shape[:1], -1)
-        best_attack = original_x
+        best_attack = tf.identity(original_x)
         # for pertubation
         modifier = tf.Variable(tf.zeros(shape, dtype=x.dtype), trainable=True)
 
@@ -183,24 +175,12 @@ class CWAttack:
             for var in self.optimizer.variables():
                 var.assign(tf.zeros(var.shape, dtype=var.dtype))
 
-            '''
-            # the last iteration (if we run many steps) repeat the search once.
-            if (self.binary_search_steps >= 10 and
-                outer_step == self.binary_search_steps - 1
-            ):
-                const = upper_bound
-            '''
-
             # early stopping criteria
             prev_loss = np.inf
-            # variables to keep track in the inner loop
-            # current_best_l2 = tf.fill(shape[:1], 1e10)
-            # current_best_label = tf.fill(shape[:1], -1)
-
             # Given current const, find the best perturbation
             for iteration in tqdm(range(self.max_iterations)):
 
-                x_new, preds, grads, loss, l2_dist = \
+                x_new, preds, grads, loss, target_loss, l2_dist = \
                     self.gradient(original_x, valid, x_tanh, modifier, y, const)
                 self.optimizer.apply_gradients( [(grads, modifier)] )
 
@@ -224,17 +204,6 @@ class CWAttack:
                 preds = tf.where(preds > 0.5, 1, 0)
                 preds = tf.reduce_sum(preds, 1)
                 # preds = tf.argmax(preds, axis=1)
-                
-                '''
-                # compute a binary mask of the tensors we want to assign
-                mask = tf.math.logical_and(
-                    tf.less(l2_dist, current_best_l2), 
-                    compare_fn(preds, label)
-                )
-                # all entries which evaluate to True get reassigned
-                current_best_l2 = set_with_mask(current_best_l2, l2_dist, mask)
-                current_best_label = set_with_mask(current_best_label, preds, mask)
-                '''
 
                 # if the l2 distance is better than the one found before
                 # and if the example is a correct example (with regards to the labels)
@@ -252,8 +221,6 @@ class CWAttack:
 
             # Search for perturbation with the current const is done
             # adjust constant with binary search
-            # label = tf.argmax(y, axis=1)
-            # label = tf.cast(label, tf.int32)
 
             # successful attack, adjust upper bound
             upper_mask = tf.math.logical_and(
@@ -286,4 +253,87 @@ class CWAttack:
             const_mask = tf.math.logical_not(const_mask)
             const = set_with_mask(const, const * 10, const_mask)
 
-        return best_attack
+        return best_attack.numpy()
+
+
+    def l0_attack_single(self, x, y):
+        """
+        Perform the L0 attack on the given single sample.
+        """
+        # Cast original samples to tensor
+        original_x = tf.cast(x, tf.float32)
+        shape = original_x.shape
+        # Convert to tanh-space
+        x_tanh = to_tanh_space(original_x)
+
+        # Define the valid mask
+        valid = np.ones(shape, dtype=np.int32)
+        # set padding to non changable
+        samples, trajs, rows = np.where( np.sum(x, axis=3) == 0 )
+        valid[samples, trajs, rows, :] = 0
+        # set time to non changable
+        valid[:, :, :, 2] = 0
+
+        # Placeholder variables
+        # for binary search of the const
+        const = tf.ones(shape[:1]) * self.initial_const
+        upper_bound = tf.ones(shape[:1]) * self.largest_const
+        # for best values
+        best_attack = tf.identity(original_x)
+        # for pertubation
+        modifier = tf.Variable(tf.zeros(shape, dtype=x.dtype), trainable=True)
+
+        # In each while loop
+        # Find if current const and valid map provide a solution
+        # |--> if yes, remove some waypoints from the valid mask
+        # |--> if no, increase the constant
+        # Until the constant is too large
+        while const < upper_bound:
+
+            # early stopping criteria
+            prev_loss = np.inf
+            # Given current const and valid map, optimize the perturbation
+            for iteration in tqdm(range(self.max_iterations)):
+
+                x_new, preds, grads, loss, target_loss, l2_dist = \
+                    self.gradient(original_x, valid, x_tanh, modifier, y, const)
+                
+                # check if we misclassify the sample
+                if (self.abort_early and target_loss <= 0):
+                    # abort if true
+                    break
+                # if not update modifier and keep optimizing
+                else:
+                    self.optimizer.apply_gradients( [(grads, modifier)] )
+            
+            # The attack failed, adjust the const by increasing const
+            if (target_loss > 0):
+                const = const * self.const_factor
+                continue
+            
+            # The attack succeeded, keep current result
+            best_attack = tf.identity(x_new)
+
+            # Adjust the valid mask
+            prev_valid = valid.copy()
+
+            # Compute total change
+            total_change = np.sum( np.abs(x_new - original_x), axis=3 ) * np.sum( np.abs(grads), axis=3 ) 
+            # Set some of the pixels to 0 depending on their total change
+            # 1, if the change is insignificant
+            valid[total_change <= 1e-5] = 0
+            # 2, set 20% of the current valid waypoints to 0
+            unchangable_count = np.sum(total_change <= 1e-5)
+            changing_count = int( 0.2 * (total_change.size - unchangable_count) )
+            sorted_indices = np.unravel_index(np.argsort(total_change, axis=None), total_change.shape)
+            sorted_indices = [indices[unchangable_count:unchangable_count + changing_count] 
+                              for indices in sorted_indices]
+            valid[tuple(sorted_indices)] = 0
+
+            # if no more change happens to the valid mask
+            if (valid - prev_valid).sum() == 0:
+                break
+
+        # Attack failed eventually
+        # Return the last adv sample
+        return best_attack.numpy()
