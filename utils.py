@@ -33,7 +33,7 @@ def denormalize_trajectory_data(X):
     return X
 
 ### For data visualization
-def visualize_trajectory(traj, linetype='o-', shown_in_whole_map=True):
+def visualize_trajectory(traj, linetype='o-', shown_in_whole_map=False):
     """Draw given trajectory
     Args:
         traj: trajectory
@@ -129,7 +129,7 @@ def create_dataset(raw_trajs, plates, num_samples,
     # Create total dataset
     traj_feature_size = len( get_trajectories(raw_trajs, plates, 0, 0, 'seek')[0][0] )
     X = np.zeros((num_samples, num_trajs*2, padding_length, traj_feature_size))
-    y = np.zeros(num_samples)
+    y = np.zeros((num_samples, 1))
 
     # Positive samples
     for i in range(num_pos_samples):
