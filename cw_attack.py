@@ -144,7 +144,7 @@ class CWAttack:
                                      labels[i : i + self.batch_size])
         '''
         for i in tqdm(range(len(samples))):
-            adv_sample = self.l0_attack_batch(samples[i:i+1], labels[i])
+            adv_sample = self.l0_attack_single(samples[i:i+1], labels[i])
             adv_samples[i:i+1] = adv_sample
         '''
         return adv_samples
@@ -359,6 +359,84 @@ class CWAttack:
             if (valid - prev_valid).sum() == 0:
                 break
 
+        # Attack failed eventually
+        # Return the last adv sample
+        return best_attack.numpy()
+
+
+    def l0_attack_single(self, x, y):
+        """
+        Perform the L0 attack on the given single sample.
+        """
+        # Cast original samples to tensor
+        original_x = tf.cast(x, tf.float32)
+        shape = original_x.shape
+        # Convert to tanh-space
+        x_tanh = to_tanh_space(original_x)
+        # Define the valid mask
+        valid = np.ones(shape, dtype=np.int32)
+        # set padding to non changable
+        samples, trajs, rows = np.where( np.sum(x, axis=3) == 0 )
+        valid[samples, trajs, rows, :] = 0
+        # set time to non changable
+        valid[:, :, :, 2] = 0
+        # Placeholder variables
+        # for binary search of the const
+        const = tf.ones(shape[:1]) * self.initial_const
+        upper_bound = tf.ones(shape[:1]) * self.largest_const
+        # for best values
+        best_attack = tf.identity(original_x)
+        # for pertubation
+        modifier = tf.Variable(tf.zeros(shape, dtype=x.dtype), trainable=True)
+        
+        # In each while loop
+        # Find if current const and valid map provide a solution
+        # |--> if yes, remove some waypoints from the valid mask
+        # |--> if no, increase the constant
+        # Until the constant is too large
+        while const < upper_bound:
+
+            # Given current const and valid map, optimize the perturbation
+            for iteration in tqdm(range(self.max_iterations)):
+
+                x_new, preds, grads, loss, target_loss, l2_dist = \
+                    self.gradient(original_x, valid, x_tanh, modifier, y, const)
+                
+                # check if we misclassify the sample
+                if (self.abort_early and target_loss <= 0):
+                    # abort if true
+                    break
+                # if not update modifier and keep optimizing
+                else:
+                    self.optimizer.apply_gradients( [(grads, modifier)] )
+            
+            # The attack failed, adjust the const by increasing const
+            if (target_loss > 0):
+                const = const * self.const_factor
+                continue
+
+            # The attack succeeded, keep current result
+            best_attack = tf.identity(x_new)
+            # x_tanh = to_tanh_space(best_attack)
+            # modifier.assign(tf.zeros(shape, dtype=x.dtype))
+
+            # Adjust the valid mask
+            prev_valid = valid.copy()
+            # Compute total change
+            total_change = np.sum( np.abs(x_new - original_x), axis=3 ) * np.sum( np.abs(grads), axis=3 ) 
+            # Set some of the pixels to 0 depending on their total change
+            # 1, if the change is insignificant
+            valid[total_change <= 1e-5] = 0
+            # 2, set 20% of the current valid waypoints to 0
+            unchangable_count = np.sum(total_change <= 1e-5)
+            changing_count = int( 0.2 * (total_change.size - unchangable_count) )
+            sorted_indices = np.unravel_index(np.argsort(total_change, axis=None), total_change.shape)
+            sorted_indices = [indices[unchangable_count:unchangable_count + changing_count] 
+                              for indices in sorted_indices]
+            valid[tuple(sorted_indices)] = 0
+            # if no more change happens to the valid mask
+            if (valid - prev_valid).sum() == 0:
+                break
         # Attack failed eventually
         # Return the last adv sample
         return best_attack.numpy()
