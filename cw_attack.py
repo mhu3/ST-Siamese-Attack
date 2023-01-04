@@ -70,7 +70,18 @@ class CWAttack:
 
             # Combine it with original sample given valid mask
             x_new = set_with_mask(x_original, x_new, valid_mask)
-            
+
+            # TODO ADD n to parameter later
+            # Clip to make sure the difference is within 
+            # [-n/49, n/49] for x and [-n/92, n/92] for y
+            n = 1
+            diff = x_new - x_original
+            diff_x, diff_y, diff_t = tf.split(diff, 3, axis=3)
+            diff_x = tf.clip_by_value(diff_x, -n/49, n/49)
+            diff_y = tf.clip_by_value(diff_y, -n/92, n/92)
+            diff = tf.concat([diff_x, diff_y, diff_t], axis=3)
+            x_new = x_original + diff
+
             # Compute loss
             y_hat = self.model(x_new)
             loss, target_loss, l2_dist = \
@@ -290,10 +301,8 @@ class CWAttack:
         # Until the constant is too large
         while const < upper_bound:
 
-            # early stopping criteria
-            prev_loss = np.inf
             # Given current const and valid map, optimize the perturbation
-            for iteration in tqdm(range(self.max_iterations)):
+            for iteration in range(self.max_iterations):
 
                 x_new, preds, grads, loss, target_loss, l2_dist = \
                     self.gradient(original_x, valid, x_tanh, modifier, y, const)
@@ -313,6 +322,8 @@ class CWAttack:
             
             # The attack succeeded, keep current result
             best_attack = tf.identity(x_new)
+            # x_tanh = to_tanh_space(best_attack)
+            # modifier.assign(tf.zeros(shape, dtype=x.dtype))
 
             # Adjust the valid mask
             prev_valid = valid.copy()

@@ -35,7 +35,7 @@ def create_fgsm_attack_samples(model, samples, labels, attack_type="linf"):
 def create_cw_attack_samples(model, samples, labels, attack_type="l0"):
     # Create attack class
     attack = CWAttack(model, batch_size=1024, learning_rate=1e-2,
-                      max_iterations=20, initial_const=1, largest_const=1000,
+                      max_iterations=20, initial_const=0.01, largest_const=1,
                       binary_search_steps=1, const_factor=5.0)
     
     # Create adversarial samples
@@ -75,17 +75,17 @@ def main(opts):
     # Create adversarial samples
     # X_cw_adv_seen = create_cw_attack_samples(model, X_test_seen, y_test_seen, "l2")
     # X_cw_adv_unseen = create_cw_attack_samples(model, X_test_unseen, y_test_unseen, "l2")
-    X_cw_adv_seen = create_cw_attack_samples(model, X_test_seen[507:508], y_test_seen[507:508], "l0")
+    X_cw_adv_seen = create_cw_attack_samples(model, X_test_seen[505:510], y_test_seen[505:510], "l0")
     # X_cw_adv_unseen = create_cw_attack_samples(model, X_test_unseen, y_test_unseen, "l0")
     # X_fgsm_linf_adv_seen = create_fgsm_attack_samples(model, X_test_seen, y_test_seen, "linf")
     # X_fgsm_linf_adv_unseen = create_fgsm_attack_samples(model, X_test_unseen, y_test_unseen, "linf")
 
     # Test attack
     # original samples
-    loss_seen, acc_seen = model.evaluate(X_test_seen[507:508], y_test_seen[507:508])
+    loss_seen, acc_seen = model.evaluate(X_test_seen[505:510], y_test_seen[505:510])
     # loss_unseen, acc_unseen = model.evaluate(X_test_unseen, y_test_unseen)
     # adversarial samples
-    loss_cw_adv_seen, acc_cw_adv_seen = model.evaluate(X_cw_adv_seen, y_test_seen[507:508])
+    loss_cw_adv_seen, acc_cw_adv_seen = model.evaluate(X_cw_adv_seen, y_test_seen[505:510])
     # loss_cw_adv_unseen, acc_cw_adv_unseen = model.evaluate(X_cw_adv_unseen, y_test_unseen)
     # loss_fgsm_linf_adv_seen, acc_fgsm_linf_adv_seen = model.evaluate(X_fgsm_linf_adv_seen, y_test_seen)
     # loss_fgsm_linf_adv_unseen, acc_fgsm_linf_adv_unseen = model.evaluate(X_fgsm_linf_adv_unseen, y_test_unseen)
@@ -101,7 +101,7 @@ def main(opts):
     # print((model.predict(X_test_unseen[:10, :, :, :])).T)
     # print((model.predict(X_cw_adv_unseen[:10, :, :, :])).T)
 
-    visualize_attack_result(X_test_seen[507:508], X_cw_adv_seen, plate_idx=0)
+    visualize_attack_result(X_test_seen[505:510], X_cw_adv_seen, plate_idx=2)
     # visualize_attack_result(X_test_unseen, X_cw_adv_unseen, plate_idx=2)
 
 
