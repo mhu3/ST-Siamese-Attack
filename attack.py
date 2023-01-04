@@ -19,11 +19,11 @@ def create_fgsm_attack_samples(model, samples, labels, attack_type="linf"):
     if attack_type == "linf":
         adv_samples = attack.linf_attack(samples, labels)
     elif attack_type == "l2":
-        pass
-        # adv_samples = attack.l2_attack(samples, labels)
+        adv_samples = attack.l2_attack(samples, labels)
+    elif attack_type == "l1":
+        adv_samples = attack.l1_attack(samples, labels)
     elif attack_type == "l0":
-        pass
-        # adv_samples = attack.l0_attack(samples, labels)
+        adv_samples = attack.l0_attack(samples, labels)
     
     # Validate the adversarial samples 
     adv_samples = denormalize_trajectory_data(adv_samples) # fit back to grid
@@ -122,6 +122,54 @@ def visualize_attack_result(X_ori, X_adv, plate_idx, fig_name="attack_result"):
         plt.legend(['original', 'adversarial'])
 
     plt.savefig(fig_name + '.png')
+
+    print(y_test_seen[500:510])
+    preds = model.predict(X_test_seen[500:510, :, :, :])
+
+    print(preds.T)
+    preds_adv = model.predict(X_fgsm_linf_adv_seen[500:510, :, :, :])
+    print(preds_adv.T)
+
+    # print the unseen prediction
+    print(y_test_unseen[:10])
+    print((model.predict(X_test_unseen[:10, :, :, :])).T)
+    print((model.predict(X_fgsm_linf_adv_unseen[:10, :, :, :])).T)
+
+    import matplotlib.pyplot as plt
+    # denormalize the data
+    X_fgsm_linf_adv_seen = denormalize_trajectory_data(X_fgsm_linf_adv_seen)
+    X_test_seen = denormalize_trajectory_data(X_test_seen)
+    X_fgsm_linf_adv_unseen = denormalize_trajectory_data(X_fgsm_linf_adv_unseen)
+    X_test_unseen = denormalize_trajectory_data(X_test_unseen)
+
+
+    # Plot the trajectories
+    plt.figure(figsize=(50, 30))
+    plt.subplots_adjust(hspace=0.5)
+    for f in range(X_test_seen.shape[1]):
+        plt.subplot(4, 5, f+1)
+
+        # Plot the original trajectory and the adversarial trajectory
+        # print(X_fgsm_linf_adv_seen[f][0])
+        visualize_trajectory(X_test_seen[507,f,:,:], 'o-', False)
+        visualize_trajectory(X_fgsm_linf_adv_seen[507,f,:,:], 'r-',  False)
+        plt.legend(['original', 'adversarial'])
+
+    plt.savefig('fgsm_l2_adv_seen.png')
+
+    # plot the unseen trajectories
+    plt.figure(figsize=(50, 30))
+    plt.subplots_adjust(hspace=0.5)
+    for f in range(X_test_unseen.shape[1]):
+        plt.subplot(4, 5, f+1)
+
+        # Plot the original trajectory and the adversarial trajectory
+        # print(X_fgsm_linf_adv_seen[f][0])
+        visualize_trajectory(X_test_unseen[0,f,:,:], 'o-', False)
+        visualize_trajectory(X_fgsm_linf_adv_unseen[0,f,:,:], 'r-',  False)
+        plt.legend(['original', 'adversarial'])
+
+    plt.savefig('fgsm_l2_adv_unseen.png')
 
 
 if __name__ == "__main__":
