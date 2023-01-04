@@ -33,7 +33,7 @@ def denormalize_trajectory_data(X):
     return X
 
 ### For data visualization
-def visualize_trajectory(traj, linetype='o-'):
+def visualize_trajectory(traj, linetype='o-', shown_in_whole_map=False):
     """Draw given trajectory
     Args:
         traj: trajectory
@@ -57,8 +57,9 @@ def visualize_trajectory(traj, linetype='o-'):
     plt.scatter(x[-1], y[-1], c='k', marker='*')
     
     # Figure settings
-    plt.xlim(0, 92)
-    plt.ylim(0, 49)
+    if shown_in_whole_map:
+        plt.xlim(0, 92)
+        plt.ylim(0, 49)
     # set x, y axis scale to be the same
     plt.gca().set_aspect('equal', adjustable='box')
 
