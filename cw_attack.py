@@ -74,7 +74,7 @@ class CWAttack:
             # TODO ADD n to parameter later
             # Clip to make sure the difference is within 
             # [-n/49, n/49] for x and [-n/92, n/92] for y
-            n = 1
+            n = 2
             diff = x_new - x_original
             diff_x, diff_y, diff_t = tf.split(diff, 3, axis=3)
             diff_x = tf.clip_by_value(diff_x, -n/49, n/49)
@@ -138,10 +138,15 @@ class CWAttack:
         """
         # Attack each individual sample
         adv_samples = np.zeros_like(samples)
+        for i in range(0, samples.shape[0], self.batch_size):
+            adv_samples[i : i + self.batch_size] = \
+                self.l0_attack_batch(samples[i : i + self.batch_size], 
+                                     labels[i : i + self.batch_size])
+        '''
         for i in tqdm(range(len(samples))):
-            adv_sample = self.l0_attack_single(samples[i:i+1], labels[i])
+            adv_sample = self.l0_attack_batch(samples[i:i+1], labels[i])
             adv_samples[i:i+1] = adv_sample
-
+        '''
         return adv_samples
 
     
@@ -267,7 +272,7 @@ class CWAttack:
         return best_attack.numpy()
 
 
-    def l0_attack_single(self, x, y):
+    def l0_attack_batch(self, x, y):
         """
         Perform the L0 attack on the given single sample.
         """
@@ -299,7 +304,8 @@ class CWAttack:
         # |--> if yes, remove some waypoints from the valid mask
         # |--> if no, increase the constant
         # Until the constant is too large
-        while const < upper_bound:
+        while tf.reduce_any(const < upper_bound):
+            print("Current average const: ", float(tf.reduce_mean(const)))
 
             # Given current const and valid map, optimize the perturbation
             for iteration in range(self.max_iterations):
@@ -307,23 +313,29 @@ class CWAttack:
                 x_new, preds, grads, loss, target_loss, l2_dist = \
                     self.gradient(original_x, valid, x_tanh, modifier, y, const)
                 
-                # check if we misclassify the sample
-                if (self.abort_early and target_loss <= 0):
+                # check samples that are still correctly classified
+                correct_mask = tf.cast(target_loss > 0, modifier.dtype)
+                incorrect_mask = 1.0 - correct_mask
+                # mask is of shape [batch_size]; best_attack is [batch_size, image_size]
+                incorrect_mask = tf.reshape(incorrect_mask, [-1, 1, 1, 1])
+                incorrect_mask = tf.tile(incorrect_mask, [1, *best_attack.shape[1:]])
+
+                # check if we misclassify the samples
+                if (self.abort_early and tf.reduce_sum(correct_mask) == 0):
                     # abort if true
                     break
-                # if not update modifier and keep optimizing
+                # if not, update modifiers that are still correctly classified
                 else:
+                    old_modifier = tf.identity(modifier)
                     self.optimizer.apply_gradients( [(grads, modifier)] )
+                    set_with_mask(modifier, old_modifier, incorrect_mask, assign=True)
             
             # The attack failed, adjust the const by increasing const
-            if (target_loss > 0):
-                const = const * self.const_factor
-                continue
+            const = set_with_mask(const, const * self.const_factor, correct_mask)
+            const = tf.clip_by_value(const, 0, self.largest_const)
             
             # The attack succeeded, keep current result
-            best_attack = tf.identity(x_new)
-            # x_tanh = to_tanh_space(best_attack)
-            # modifier.assign(tf.zeros(shape, dtype=x.dtype))
+            best_attack = set_with_mask(best_attack, x_new, incorrect_mask)
 
             # Adjust the valid mask
             prev_valid = valid.copy()
@@ -334,12 +346,14 @@ class CWAttack:
             # 1, if the change is insignificant
             valid[total_change <= 1e-5] = 0
             # 2, set 20% of the current valid waypoints to 0
-            unchangable_count = np.sum(total_change <= 1e-5)
-            changing_count = int( 0.2 * (total_change.size - unchangable_count) )
-            sorted_indices = np.unravel_index(np.argsort(total_change, axis=None), total_change.shape)
-            sorted_indices = [indices[unchangable_count:unchangable_count + changing_count] 
-                              for indices in sorted_indices]
-            valid[tuple(sorted_indices)] = 0
+            for i in range(shape[0]):
+                unchangable_count = np.sum(total_change[i] <= 1e-5)
+                changing_count = int( 0.2 * (total_change[i].size - unchangable_count) )
+                sorted_indices = np.unravel_index(np.argsort(total_change[i], axis=None), total_change[i].shape)
+                sorted_indices = [indices[unchangable_count:unchangable_count + changing_count] 
+                                  for indices in sorted_indices]
+                sorted_indices.insert(0, i)
+                valid[tuple(sorted_indices)] = 0
 
             # if no more change happens to the valid mask
             if (valid - prev_valid).sum() == 0:

@@ -13,11 +13,14 @@ def from_tanh_space(x, box_min=0.0, box_max=1.0):
     return tf.tanh(x) * mul + plus
 
 
-def set_with_mask(x, x_other, mask):
+def set_with_mask(x, x_other, mask, assign=False):
     """ Returns a tensor similar to x 
         with all the values replaced by x_other 
         where the mask evaluates to true.
     """
     mask = tf.cast(mask, dtype=x.dtype) # true/fales -> 1/0
     ones = tf.ones_like(mask, dtype=x.dtype)
-    return x * (ones - mask) + x_other * mask
+    if assign:
+        x.assign(x * (ones - mask) + x_other * mask)
+    else:
+        return x * (ones - mask) + x_other * mask
