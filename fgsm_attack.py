@@ -74,9 +74,6 @@ class FGSM():
         # normalization factor  49, 92
         # Binary cross entropy (0/1)
         loss_object = tf.keras.losses.BinaryCrossentropy()
-        
-        # Change label size to [batch_size, 1]
-        labels = labels[:, np.newaxis]
 
         pairs_ori = tf.Variable(samples, dtype=tf.float32)
         pairs_adv = tf.Variable(samples, dtype=tf.float32)
