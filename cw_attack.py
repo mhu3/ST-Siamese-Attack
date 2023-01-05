@@ -138,6 +138,7 @@ class CWAttack:
         """
         # Attack each individual sample
         adv_samples = np.zeros_like(samples)
+        
         for i in range(0, samples.shape[0], self.batch_size):
             adv_samples[i : i + self.batch_size] = \
                 self.l0_attack_batch(samples[i : i + self.batch_size], 
@@ -314,39 +315,43 @@ class CWAttack:
                     self.gradient(original_x, valid, x_tanh, modifier, y, const)
                 
                 # check samples that are still correctly classified
-                correct_mask = tf.cast(target_loss > 0, modifier.dtype)
-                incorrect_mask = 1.0 - correct_mask
+                unsuccess_mask = tf.cast(target_loss > 0, modifier.dtype)
+                success_mask = 1.0 - unsuccess_mask
                 # mask is of shape [batch_size]; best_attack is [batch_size, image_size]
-                incorrect_mask = tf.reshape(incorrect_mask, [-1, 1, 1, 1])
-                incorrect_mask = tf.tile(incorrect_mask, [1, *best_attack.shape[1:]])
+                success_mask = tf.reshape(success_mask, [-1, 1, 1, 1])
+                success_mask = tf.tile(success_mask, [1, *best_attack.shape[1:]])
 
                 # check if we misclassify the samples
-                if (self.abort_early and tf.reduce_sum(correct_mask) == 0):
+                if (self.abort_early and tf.reduce_sum(unsuccess_mask) == 0):
                     # abort if true
                     break
                 # if not, update modifiers that are still correctly classified
                 else:
                     old_modifier = tf.identity(modifier)
                     self.optimizer.apply_gradients( [(grads, modifier)] )
-                    set_with_mask(modifier, old_modifier, incorrect_mask, assign=True)
+                    set_with_mask(modifier, old_modifier, success_mask, assign=True)
             
             # The attack failed, adjust the const by increasing const
-            const = set_with_mask(const, const * self.const_factor, correct_mask)
+            const = set_with_mask(const, const * self.const_factor, unsuccess_mask)
             const = tf.clip_by_value(const, 0, self.largest_const)
             
             # The attack succeeded, keep current result
-            best_attack = set_with_mask(best_attack, x_new, incorrect_mask)
+            best_attack = set_with_mask(best_attack, x_new, success_mask)
 
             # Adjust the valid mask
             prev_valid = valid.copy()
-
             # Compute total change
             total_change = np.sum( np.abs(x_new - original_x), axis=3 ) * np.sum( np.abs(grads), axis=3 ) 
             # Set some of the pixels to 0 depending on their total change
-            # 1, if the change is insignificant
-            valid[total_change <= 1e-5] = 0
-            # 2, set 20% of the current valid waypoints to 0
-            for i in range(shape[0]):
+            # only change the valid mask of those that are successfully attacked
+            success_indices = np.where(unsuccess_mask.numpy() == 0)[0]
+            unsuccess_indices = np.where(unsuccess_mask.numpy() == 1)[0]
+            for i in success_indices:
+                # 1, if the change is insignificant
+                insignificant_indices = list( np.where( total_change[i] <= 1e-5 ) )
+                insignificant_indices.insert(0, i)
+                valid[tuple(insignificant_indices)] = 0
+                # 2, set 20% of the current valid waypoints to 0
                 unchangable_count = np.sum(total_change[i] <= 1e-5)
                 changing_count = int( 0.2 * (total_change[i].size - unchangable_count) )
                 sorted_indices = np.unravel_index(np.argsort(total_change[i], axis=None), total_change[i].shape)
@@ -355,8 +360,11 @@ class CWAttack:
                 sorted_indices.insert(0, i)
                 valid[tuple(sorted_indices)] = 0
 
-            # if no more change happens to the valid mask
-            if (valid - prev_valid).sum() == 0:
+            # Exit if 
+            # all unsuccessfully attacked samples have reached maximum const and
+            # all successufully attacked samples have no more valid waypoints to remove
+            if tf.reduce_all( tf.gather(const, unsuccess_indices) >= self.largest_const ) and \
+               np.abs(valid[success_indices] - prev_valid[success_indices]).sum() == 0:
                 break
 
         # Attack failed eventually
@@ -397,7 +405,7 @@ class CWAttack:
         while const < upper_bound:
 
             # Given current const and valid map, optimize the perturbation
-            for iteration in tqdm(range(self.max_iterations)):
+            for iteration in range(self.max_iterations):
 
                 x_new, preds, grads, loss, target_loss, l2_dist = \
                     self.gradient(original_x, valid, x_tanh, modifier, y, const)
