@@ -32,6 +32,8 @@ class FGSM():
         valid[samples, trajs, rows, :] = 0
         # set time to non changable
         valid[:, :, :, 2] = 0
+        # set serve to non changable
+        valid[:, 10:20:, :, :] = 0
 
         # Iterative FGSM
         for i in tqdm(range(iteration)):
@@ -70,8 +72,23 @@ class FGSM():
         # Binary cross entropy (0/1)
         loss_object = tf.keras.losses.BinaryCrossentropy()
 
+        # Change label size to [batch_size, 1]
+        # labels = labels[:, np.newaxis]
+
         pairs_ori = tf.Variable(samples, dtype=tf.float32)
         pairs_adv = tf.Variable(samples, dtype=tf.float32)
+
+        shape = pairs_ori.shape
+
+        # Define the valid mask
+        valid = np.ones(shape, dtype=np.int32)
+        # set padding to non changable
+        samples, trajs, rows = np.where(np.sum(pairs_ori, axis=3) == 0)
+        valid[samples, trajs, rows, :] = 0
+        # set time to non changable
+        valid[:, :, :, 2] = 0
+        # set serve to non changable
+        valid[:, 10:20:, :, :] = 0
         
         # Iterative FGSM
         for i in tqdm(range(iteration)):
@@ -95,23 +112,7 @@ class FGSM():
             # l2 norm of the gradients
             l2_grads = gradients / norm
 
-            # Constraint on sequential data
-            # we should not change the padding
-            l2_grads = l2_grads.numpy()
-            for i in range(l2_grads.shape[0]):
-                # find rows with all 0s
-                trajs, rows = np.where( np.sum(samples[i], axis=2) == 0 )
-                l2_grads[i, trajs, rows, :] = 0
-
-                # avoid changing time
-                l2_grads[i, :, :, 2] = 0
-
-                # acoid changing the serve trajectory
-                l2_grads[i, 10:20, :, :] = 0
-
-            # Perturb the input
-            l2_grads = tf.convert_to_tensor(l2_grads)
-            pairs_adv = pairs_adv + eps * l2_grads
+            pairs_adv = pairs_adv + eps * valid * l2_grads
             
             # compute the difference between the original and the perturbed trajectory
             diff = pairs_adv.numpy() - pairs_ori.numpy()
