@@ -143,12 +143,12 @@ class FGSM():
                                      labels[i : i + self.batch_size])
         '''
         for i in tqdm(range(len(samples))):
-            adv_sample = self.l0_attack_single(samples[i:i+1], labels[i])
+            adv_sample = self.l0_attack_single(samples[i:i+1], labels[i:i+1])
             adv_samples[i:i+1] = adv_sample
         
     #     return adv_samples
     
-    def l0_attack(self, x, y, iteration=100, eps=0.05):
+    def l0_attack_single(self, x, y, iteration=100, eps=0.05):
         """
         Perform the L0 attack on the given single sample.
         """
