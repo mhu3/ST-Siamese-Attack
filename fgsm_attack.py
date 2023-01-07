@@ -146,84 +146,95 @@ class FGSM():
             adv_sample = self.l0_attack_single(samples[i:i+1], labels[i])
             adv_samples[i:i+1] = adv_sample
         
-        return adv_samples
+    #     return adv_samples
     
-    def l0_attack_single(self, x, y, iteration=100, eps=0.05):
+    def l0_attack(self, x, y, iteration=100, eps=0.05):
         """
         Perform the L0 attack on the given single sample.
         """
+        # normalization factor  49, 92
+        # Binary cross entropy (0/1)
         loss_object = tf.keras.losses.BinaryCrossentropy()
 
-        # Cast original samples to tensor
-        original_x = tf.Variable(x, dtype=tf.float32)
-        adv_x = tf.Variable(x, dtype=tf.float32)
-        shape = original_x.shape
+        # Change label size to [batch_size, 1]
+        # labels = labels[:, np.newaxis]
+
+        pairs_ori = tf.Variable(x, dtype=tf.float32)
+        pairs_adv = tf.Variable(x, dtype=tf.float32)
+
+        shape = pairs_ori.shape
 
         # Define the valid mask
         valid = np.ones(shape, dtype=np.int32)
         # set padding to non changable
-        samples, trajs, rows = np.where(np.sum(x, axis=3) == 0 )
+        samples, trajs, rows = np.where(np.sum(pairs_ori, axis=3) == 0)
         valid[samples, trajs, rows, :] = 0
         # set time to non changable
         valid[:, :, :, 2] = 0
-
+    
         # Iterative FGSM
         for i in tqdm(range(iteration)):
             # Compute current loss
             with tf.GradientTape() as tape:
                 
                 # Watch the input
-                tape.watch(adv_x)
+                tape.watch(pairs_adv)
                 
                 # Compute loss
-                prediction = self.model(adv_x)
+                prediction = self.model(pairs_adv)
                 loss = loss_object(y, prediction)
 
             # Get the gradients of the loss w.r.t to the input
-            gradients = tape.gradient(loss, adv_x)
+            gradients = tape.gradient(loss, pairs_adv)
+
             # Get the sign of the gradients to create the perturbation
             signed_grads = tf.sign(gradients)
 
-            # Perturb the input
-            adv_x = adv_x + eps * signed_grads
-            
+            # Add perturbation to the adversarial example
+            pairs_adv = pairs_adv + eps * valid * signed_grads
+
             # compute the difference between the original and the perturbed trajectory
-            diff = adv_x.numpy() - original_x.numpy()
+            diff = pairs_adv.numpy() - pairs_ori.numpy()
 
             # Clip the diff to be in the range of [-1/49, 1/49], [-1/92, 1/92] on x, y 
             diff[:, :, :, 0] = np.clip(diff[:, :, :, 0], -1/49, 1/49)
             diff[:, :, :, 1] = np.clip(diff[:, :, :, 1], -1/92, 1/92)
-            diff = tf.convert_to_tensor(diff)
-            
+            diff = tf.convert_to_tensor(diff) 
+
             # Add the difference to the original input
-            adv_x = original_x + valid * diff
+            pairs_adv = pairs_ori + diff
 
-        #     y_hat = self.model(pairs_adv)
+            # Determine if the attack if successful
+            prediction = self.model(pairs_adv)
 
-        #     y_hat = y * y_hat + (1 - y) * (1 - y_hat)
+            prediction = prediction.numpy()
 
-        #     if yhat < 0.5:
+            if np.rint(prediction) == y:
+                break
 
+            # previous valid
+            prev_valid = valid.copy()
 
-        #     # Adjust the valid mask
-        #     prev_valid = valid.copy()
+            # Compute total change
+            total_change = np.sum(np.abs(gradients), axis=3) 
 
-        #     # Compute total change
-        #     total_change = np.sum(np.abs(gradients), axis=3) 
-        #     # Set some of the pixels to 0 depending on their total change
-        #     # 1, if the change is insignificant
-        #     valid[total_change <= 1e-5] = 0
-        #     # 2, set 20% of the current valid waypoints to 0
-        #     unchangable_count = np.sum(total_change <= 1e-5)
-        #     changing_count = int( 0.2 * (total_change.size - unchangable_count) )
-        #     sorted_indices = np.unravel_index(np.argsort(total_change, axis=None), total_change.shape)
-        #     sorted_indices = [indices[unchangable_count:unchangable_count + changing_count] 
-        #                         for indices in sorted_indices]
-        #     valid[tuple(sorted_indices)] = 0
-        #     # if no more change happens to the valid mask
-        #     if (valid - prev_valid).sum() == 0:
-        #         break
-        # # Attack failed eventually
-        # # Return the last adv sample
-        return adv_x.numpy()
+            # Set some of the pixels to 0 depending on their total change
+            # 1, if the change is insignificant
+            valid[total_change <= 1e-5] = 0
+
+            # 2, set 20% of the current valid waypoints to 0
+            unchangable_count = np.sum(total_change <= 1e-5)
+            changing_count = int( 0.2 * (total_change.size - unchangable_count) )
+            sorted_indices = np.unravel_index(np.argsort(total_change, axis=None), total_change.shape)
+            sorted_indices = [indices[unchangable_count:unchangable_count + changing_count] 
+                                for indices in sorted_indices]
+            valid[tuple(sorted_indices)] = 0
+
+            # if no more change happens to the valid mask
+            if np.abs(valid - prev_valid).sum() == 0:
+                break                  
+
+        # Attack failed eventually
+        # Return the last adv sample
+        return pairs_adv.numpy()
 
