@@ -145,10 +145,10 @@ class FGSM():
         for i in tqdm(range(len(samples))):
             adv_sample = self.l0_attack_single(samples[i:i+1], labels[i:i+1])
             adv_samples[i:i+1] = adv_sample
-        
-    #     return adv_samples
+            
+            return adv_samples
     
-    def l0_attack_single(self, x, y, iteration=100, eps=0.05):
+    def l0_attack_single(self, x, y, iteration=20, eps=0.05):
         """
         Perform the L0 attack on the given single sample.
         """
@@ -171,52 +171,55 @@ class FGSM():
         valid[samples, trajs, rows, :] = 0
         # set time to non changable
         valid[:, :, :, 2] = 0
-    
-        # Iterative FGSM
-        for i in tqdm(range(iteration)):
-            # Compute current loss
-            with tf.GradientTape() as tape:
-                
-                # Watch the input
-                tape.watch(pairs_adv)
-                
-                # Compute loss
-                prediction = self.model(pairs_adv)
-                loss = loss_object(y, prediction)
 
-            # Get the gradients of the loss w.r.t to the input
-            gradients = tape.gradient(loss, pairs_adv)
+        # iterative until the attack is not successful
+        while True:
 
-            # Get the sign of the gradients to create the perturbation
-            signed_grads = tf.sign(gradients)
+            # Iterative FGSM
+            for _ in tqdm(range(iteration)):
+                # Compute current loss
+                with tf.GradientTape() as tape:
+                    
+                    # Watch the input
+                    tape.watch(pairs_adv)
+                    
+                    # Compute loss
+                    prediction = self.model(pairs_adv)
+                    loss = loss_object(y, prediction)
 
-            # Add perturbation to the adversarial example
-            pairs_adv = pairs_adv + eps * valid * signed_grads
+                # Get the gradients of the loss w.r.t to the input
+                gradients = tape.gradient(loss, pairs_adv)
+                # Get the sign of the gradients to create the perturbation
+                signed_grads = tf.sign(gradients)
 
-            # compute the difference between the original and the perturbed trajectory
-            diff = pairs_adv.numpy() - pairs_ori.numpy()
+                # Add perturbation to the adversarial example
+                pairs_adv = pairs_adv + eps * valid * signed_grads
 
-            # Clip the diff to be in the range of [-1/49, 1/49], [-1/92, 1/92] on x, y 
-            diff[:, :, :, 0] = np.clip(diff[:, :, :, 0], -1/49, 1/49)
-            diff[:, :, :, 1] = np.clip(diff[:, :, :, 1], -1/92, 1/92)
-            diff = tf.convert_to_tensor(diff) 
+                # compute the difference between the original and the perturbed trajectory
+                diff = pairs_adv.numpy() - pairs_ori.numpy()
+                # Clip the diff to be in the range of [-1/49, 1/49], [-1/92, 1/92] on x, y 
+                diff[:, :, :, 0] = np.clip(diff[:, :, :, 0], -1/49, 1/49)
+                diff[:, :, :, 1] = np.clip(diff[:, :, :, 1], -1/92, 1/92)
+                diff = tf.convert_to_tensor(diff) 
+                # Add the difference to the original input
+                pairs_adv = pairs_ori + diff
 
-            # Add the difference to the original input
-            pairs_adv = pairs_ori + diff
-
-            # Determine if the attack if successful
+            # Check if the attack is successful
             prediction = self.model(pairs_adv)
-
-            prediction = prediction.numpy()
-
-            if np.rint(prediction) == y:
+            # FGSM attack failed
+            if np.all( np.rint(prediction) == y ):
                 break
-
+            
+            # attack successed, remove valid points
             # previous valid
             prev_valid = valid.copy()
 
             # Compute total change
-            total_change = np.sum(np.abs(gradients), axis=3) 
+            total_change = np.sum(np.abs(gradients * valid), axis=3)
+            # 1, Consider valid
+            # gradient * valid
+            # 2, Use CW?
+            # gradient * diff * valid
 
             # Set some of the pixels to 0 depending on their total change
             # 1, if the change is insignificant
@@ -227,14 +230,13 @@ class FGSM():
             changing_count = int( 0.2 * (total_change.size - unchangable_count) )
             sorted_indices = np.unravel_index(np.argsort(total_change, axis=None), total_change.shape)
             sorted_indices = [indices[unchangable_count:unchangable_count + changing_count] 
-                                for indices in sorted_indices]
+                              for indices in sorted_indices]
             valid[tuple(sorted_indices)] = 0
 
             # if no more change happens to the valid mask
             if np.abs(valid - prev_valid).sum() == 0:
-                break                  
+                break
 
         # Attack failed eventually
         # Return the last adv sample
         return pairs_adv.numpy()
-
