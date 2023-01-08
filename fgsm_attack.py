@@ -146,9 +146,9 @@ class FGSM():
             adv_sample = self.l0_attack_single(samples[i:i+1], labels[i:i+1])
             adv_samples[i:i+1] = adv_sample
             
-            return adv_samples
+        return adv_samples
     
-    def l0_attack_single(self, x, y, iteration=20, eps=0.05):
+    def l0_attack_single(self, x, y, iteration=50, eps=0.05):
         """
         Perform the L0 attack on the given single sample.
         """
@@ -172,9 +172,14 @@ class FGSM():
         # set time to non changable
         valid[:, :, :, 2] = 0
 
-        # iterative until the attack is not successful
-        while True:
+        # # set serve to non changable
+        # valid[:, 10:20:, :, :] = 0
 
+        # iterative until the attack is not successful
+        last_adv = pairs_adv.numpy()
+        diff = tf.zeros(shape, dtype=tf.float32)
+        while True:
+        
             # Iterative FGSM
             for _ in tqdm(range(iteration)):
                 # Compute current loss
@@ -193,29 +198,32 @@ class FGSM():
                 signed_grads = tf.sign(gradients)
 
                 # Add perturbation to the adversarial example
-                pairs_adv = pairs_adv + eps * valid * signed_grads
+                diff += valid * eps * signed_grads
 
-                # compute the difference between the original and the perturbed trajectory
-                diff = pairs_adv.numpy() - pairs_ori.numpy()
                 # Clip the diff to be in the range of [-1/49, 1/49], [-1/92, 1/92] on x, y 
-                diff[:, :, :, 0] = np.clip(diff[:, :, :, 0], -1/49, 1/49)
-                diff[:, :, :, 1] = np.clip(diff[:, :, :, 1], -1/92, 1/92)
-                diff = tf.convert_to_tensor(diff) 
+                diff_np = diff.numpy()
+                diff_np[:, :, :, 0] = np.clip(diff_np[:, :, :, 0], -2/49, 2/49)
+                diff_np[:, :, :, 1] = np.clip(diff_np[:, :, :, 1], -2/92, 2/92)
+                diff = tf.convert_to_tensor(diff_np) 
+
                 # Add the difference to the original input
-                pairs_adv = pairs_ori + diff
+                pairs_adv = pairs_ori + valid * diff
 
             # Check if the attack is successful
             prediction = self.model(pairs_adv)
             # FGSM attack failed
             if np.all( np.rint(prediction) == y ):
                 break
+            # FGSM attack successed, keep record of the last successful attack
+            else:
+                last_adv = pairs_adv.numpy()
             
-            # attack successed, remove valid points
+            # Remove valid points
             # previous valid
             prev_valid = valid.copy()
 
             # Compute total change
-            total_change = np.sum(np.abs(gradients * valid), axis=3)
+            total_change = np.sum(np.abs(gradients * diff * valid), axis=3)
             # 1, Consider valid
             # gradient * valid
             # 2, Use CW?
@@ -234,9 +242,9 @@ class FGSM():
             valid[tuple(sorted_indices)] = 0
 
             # if no more change happens to the valid mask
-            if np.abs(valid - prev_valid).sum() == 0:
+            if np.abs(valid - prev_valid).sum() == 0: # 
                 break
 
         # Attack failed eventually
         # Return the last adv sample
-        return pairs_adv.numpy()
+        return last_adv
