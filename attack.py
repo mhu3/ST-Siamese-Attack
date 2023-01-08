@@ -1,6 +1,7 @@
 import keras
 import numpy as np
 import matplotlib.pyplot as plt
+import pickle, bz2
 
 from utils import load_data, normalize_trajectory_data, denormalize_trajectory_data, \
                   visualize_trajectory
@@ -23,7 +24,7 @@ def create_fgsm_attack_samples(model, samples, labels, attack_type="linf"):
     elif attack_type == "l1":
         adv_samples = attack.l1_attack(samples, labels)
     elif attack_type == "l0":
-        adv_samples = attack.l0_attack_single(samples, labels)
+        adv_samples = attack.l0_attack(samples, labels)
     
     # Validate the adversarial samples 
     adv_samples = denormalize_trajectory_data(adv_samples) # fit back to grid
@@ -65,6 +66,11 @@ def main(opts):
         X_test_seen, y_test_seen = load_data(opts.data_path + 'testing_set_seen.pkl')
         X_test_unseen, y_test_unseen = load_data(opts.data_path + 'testing_set_unseen.pkl')
 
+    X_test_seen = X_test_seen[:2]
+    y_test_seen = y_test_seen[:2]
+    X_test_unseen = X_test_unseen[:2]
+    y_test_unseen = y_test_unseen[:2]
+
     # Normalize data
     X_test_seen = normalize_trajectory_data(X_test_seen)
     X_test_unseen = normalize_trajectory_data(X_test_unseen)
@@ -77,18 +83,19 @@ def main(opts):
     # X_cw_adv_unseen = create_cw_attack_samples(model, X_test_unseen, y_test_unseen, "l2")
     # X_cw_adv_seen = create_cw_attack_samples(model, X_test_seen, y_test_seen, "l0")
     # X_cw_adv_unseen = create_cw_attack_samples(model, X_test_unseen, y_test_unseen, "l0")
-    X_fgsm_linf_adv_seen = create_fgsm_attack_samples(model, X_test_seen, y_test_seen, "linf")
-    X_fgsm_linf_adv_unseen = create_fgsm_attack_samples(model, X_test_unseen, y_test_unseen, "linf")
+    X_fgsm_linf_adv_seen = create_fgsm_attack_samples(model, X_test_seen, y_test_seen, "l0")
+    #X_fgsm_linf_adv_unseen = create_fgsm_attack_samples(model, X_test_unseen, y_test_unseen, "l0")
+    
 
     # Test attack
     # original samples
     loss_seen, acc_seen = model.evaluate(X_test_seen, y_test_seen)
-    loss_unseen, acc_unseen = model.evaluate(X_test_unseen, y_test_unseen)
+    #loss_unseen, acc_unseen = model.evaluate(X_test_unseen, y_test_unseen)
     # adversarial samples
     # loss_cw_adv_seen, acc_cw_adv_seen = model.evaluate(X_cw_adv_seen, y_test_seen)
     # loss_cw_adv_unseen, acc_cw_adv_unseen = model.evaluate(X_cw_adv_unseen, y_test_unseen)
     loss_fgsm_linf_adv_seen, acc_fgsm_linf_adv_seen = model.evaluate(X_fgsm_linf_adv_seen, y_test_seen)
-    loss_fgsm_linf_adv_unseen, acc_fgsm_linf_adv_unseen = model.evaluate(X_fgsm_linf_adv_unseen, y_test_unseen)
+    #loss_fgsm_linf_adv_unseen, acc_fgsm_linf_adv_unseen = model.evaluate(X_fgsm_linf_adv_unseen, y_test_unseen)
 
     # Visualize result
     # # print the unseen prediction
@@ -101,8 +108,16 @@ def main(opts):
     # print((model.predict(X_test_unseen[:10, :, :, :])).T)
     # print((model.predict(X_cw_adv_unseen[:10, :, :, :])).T)
 
-    visualize_attack_result(X_test_seen, X_fgsm_linf_adv_seen, plate_idx=507, fig_name="cw_attack_result_seen")
-    visualize_attack_result(X_test_unseen, X_fgsm_linf_adv_unseen, plate_idx=0, fig_name="cw_attack_result_unseen")
+    visualize_attack_result(X_test_seen, X_fgsm_linf_adv_seen, plate_idx=0, fig_name="fgsm_attack_result_seen")
+    #visualize_attack_result(X_test_unseen, X_fgsm_linf_adv_unseen, plate_idx=0, fig_name="fgsm_attack_result_unseen")
+
+    # new prediction
+    y_fgsm_linf_adv_seen = model.predict(X_fgsm_linf_adv_seen)
+    #y_fgsm_linf_adv_unseen = model.predict(X_fgsm_linf_adv_unseen)
+
+    # save adversarial samples
+    pickle.dump([X_fgsm_linf_adv_seen, y_fgsm_linf_adv_seen], bz2.open('./dataset/fgsm_linf_adv_seen.pkl', 'wb'))
+    # pickle.dump([X_fgsm_linf_adv_unseen, y_fgsm_linf_adv_unseen], bz2.open('./dataset/fgsm_linf_adv_unseen.pkl', 'wb'))
 
 
 def visualize_attack_result(X_ori, X_adv, plate_idx, fig_name="attack_result"):
