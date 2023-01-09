@@ -1,4 +1,5 @@
 import keras
+import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle, bz2
@@ -24,7 +25,7 @@ def create_fgsm_attack_samples(model, samples, labels, attack_type="linf"):
     elif attack_type == "l1":
         adv_samples = attack.l1_attack(samples, labels)
     elif attack_type == "l0":
-        adv_samples = attack.l0_attack(samples, labels)
+        adv_samples = attack.l0_attack_batch(samples, labels)
     
     # Validate the adversarial samples 
     adv_samples = denormalize_trajectory_data(adv_samples) # fit back to grid
@@ -46,7 +47,7 @@ def create_cw_attack_samples(model, samples, labels, attack_type="l0"):
     elif attack_type == "l2":
         adv_samples = attack.l2_attack(samples, labels)
     elif attack_type == "l0":
-        adv_samples = attack.l0_attack(samples, labels)
+        adv_samples = attack.l0_attack_single(samples, labels)
 
     # Validate the adversarial samples 
     adv_samples = denormalize_trajectory_data(adv_samples) # fit back to grid
@@ -66,10 +67,10 @@ def main(opts):
         X_test_seen, y_test_seen = load_data(opts.data_path + 'testing_set_seen.pkl')
         X_test_unseen, y_test_unseen = load_data(opts.data_path + 'testing_set_unseen.pkl')
 
-    X_test_seen = X_test_seen[:2]
-    y_test_seen = y_test_seen[:2]
-    X_test_unseen = X_test_unseen[:2]
-    y_test_unseen = y_test_unseen[:2]
+    X_test_seen = X_test_seen[510:512]
+    y_test_seen = y_test_seen[510:512]
+    X_test_unseen = X_test_unseen[510:512]
+    y_test_unseen = y_test_unseen[510:512]
 
     # Normalize data
     X_test_seen = normalize_trajectory_data(X_test_seen)
@@ -98,10 +99,10 @@ def main(opts):
     #loss_fgsm_linf_adv_unseen, acc_fgsm_linf_adv_unseen = model.evaluate(X_fgsm_linf_adv_unseen, y_test_unseen)
 
     # Visualize result
-    # # print the unseen prediction
-    # print(y_test_seen[:10].T)
-    # print((model.predict(X_test_seen[:10, :, :, :])).T)
-    # print((model.predict(X_cw_adv_seen[:10, :, :, :])).T)
+    # # # print the unseen prediction
+    print(y_test_seen.T)
+    print((model.predict(X_test_seen)).T)
+    print((model.predict(X_fgsm_linf_adv_seen)).T)
 
     # # print the unseen prediction
     # print(y_test_unseen[:10].T)
@@ -116,7 +117,7 @@ def main(opts):
     #y_fgsm_linf_adv_unseen = model.predict(X_fgsm_linf_adv_unseen)
 
     # save adversarial samples
-    pickle.dump([X_fgsm_linf_adv_seen, y_fgsm_linf_adv_seen], bz2.open('./dataset/fgsm_linf_adv_seen.pkl', 'wb'))
+    pickle.dump([X_fgsm_linf_adv_seen, y_fgsm_linf_adv_seen], bz2.open('./dataset/fgsm_l0_adv_seen.pkl', 'wb'))
     # pickle.dump([X_fgsm_linf_adv_unseen, y_fgsm_linf_adv_unseen], bz2.open('./dataset/fgsm_linf_adv_unseen.pkl', 'wb'))
 
 
@@ -133,7 +134,7 @@ def visualize_attack_result(X_ori, X_adv, plate_idx, fig_name="attack_result"):
 
         # Plot the original trajectory and the adversarial trajectory
         visualize_trajectory(X_ori[plate_idx, t], 'o-', False)
-        visualize_trajectory(X_adv[plate_idx, t], 'r-', False)
+        visualize_trajectory(X_adv[plate_idx, t], 'r-.', False)
         plt.legend(['original', 'adversarial'])
 
     plt.savefig(fig_name + '.png')
@@ -144,6 +145,8 @@ if __name__ == "__main__":
     # Argument
     parser = create_parser()
     opts = parser.parse_args()
+    tf.keras.utils.set_random_seed(1)
+    tf.config.experimental.enable_op_determinism()
 
     main(opts)
     

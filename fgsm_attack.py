@@ -147,7 +147,7 @@ class FGSM():
             
         return adv_samples
     
-    def l0_attack_single(self, x, y, iteration=50, eps=0.05):
+    def l0_attack_single(self, x, y, eps=0.001, iteration=20):
         """
         Perform the L0 attack on the given single sample.
         """
@@ -180,7 +180,7 @@ class FGSM():
         while True:
             diff = tf.zeros(shape, dtype=tf.float32)
             # Iterative FGSM
-            for _ in tqdm(range(iteration)):
+            for i in tqdm(range(iteration)):
                 # Compute current loss
                 with tf.GradientTape() as tape:
                     
@@ -209,20 +209,24 @@ class FGSM():
                 pairs_adv = pairs_ori + valid * diff
 
             # Check if the attack is successful
+            print(gradients)
             prediction = self.model(pairs_adv)
+            print(prediction)
+            
+
             # FGSM attack failed
             if np.all( np.rint(prediction) == y ):
                 break
             # FGSM attack successed, keep record of the last successful attack
-            else:
-                last_adv = pairs_adv.numpy()
+            # else:
+            #     last_adv = pairs_adv.numpy()
             
             # Remove valid points
             # previous valid
             prev_valid = valid.copy()
 
             # Compute total change
-            total_change = np.sum(np.abs(gradients * diff * valid), axis=3)
+            total_change = np.sum(np.abs(gradients * valid), axis=3)
             # 1, Consider valid
             # gradient * valid
             # 2, Use CW?
@@ -237,8 +241,10 @@ class FGSM():
             changing_count = int( 0.2 * (total_change.size - unchangable_count) )
             sorted_indices = np.unravel_index(np.argsort(total_change, axis=None), total_change.shape)
             sorted_indices = [indices[unchangable_count:unchangable_count + changing_count] 
-                              for indices in sorted_indices]
+                                for indices in sorted_indices]
             valid[tuple(sorted_indices)] = 0
+            
+            last_adv = pairs_adv.numpy()
 
             # if no more change happens to the valid mask
             if np.abs(valid - prev_valid).sum() == 0: # 
@@ -248,16 +254,13 @@ class FGSM():
         # Return the last adv sample
         return last_adv
 
-    def l0_attack_batch(self, samples, labels, iteration=50, eps=0.05):
+    def l0_attack_batch(self, samples, labels, eps=0.001, iteration=20):
         """
         Perform the L0 attack on the given batch of samples.
         """
         # normalization factor  49, 92
         # Binary cross entropy (0/1)
         loss_object = tf.keras.losses.BinaryCrossentropy()
-
-        # Change label size to [batch_size, 1]
-        # labels = labels[:, np.newaxis]
 
         pairs_ori = tf.Variable(samples, dtype=tf.float32)
         pairs_adv = tf.Variable(samples, dtype=tf.float32)
@@ -275,14 +278,13 @@ class FGSM():
         # # set serve to non changable
         # valid[:, 10:20:, :, :] = 0
 
-        # iterative until the attack is not successful
+        # iterative until the attack is not successful for all samples
         last_adv = pairs_adv.numpy()
-        
+
         while True:
-        
             # Iterative FGSM
             diff = tf.zeros(shape, dtype=tf.float32)
-            for _ in range(iteration):
+            for i in tqdm(range(iteration)):
                 # Compute current loss
                 with tf.GradientTape() as tape:
                     
@@ -295,6 +297,7 @@ class FGSM():
 
                 # Get the gradients of the loss w.r.t to the input
                 gradients = tape.gradient(loss, pairs_adv)
+            
                 # Get the sign of the gradients to create the perturbation
                 signed_grads = tf.sign(gradients)
 
@@ -311,43 +314,51 @@ class FGSM():
                 pairs_adv = pairs_ori + valid * diff
 
             # Check if the attack is successful
+            print(shape[0]*gradients[0, 0, 59, :])
             prediction = self.model(pairs_adv)
-            # FGSM attack failed
-            if np.all( np.rint(prediction) == labels ):
-                break
+            print(prediction)
 
-            # FGSM attack successed, keep record of the last successful attack
-            else:
-                last_adv = pairs_adv.numpy()
+            # find the samples that are successfully attacked
+            success = np.logical_not(np.rint(prediction) == labels)
+            #find the indices of the samples that are successfully attacked
+            success_indices = np.where(success)[0]
 
+            # update the last adv sample
+            last_adv[success_indices] = pairs_adv.numpy()[success_indices]
+        
             # Remove valid points
             # previous valid
             prev_valid = valid.copy()
 
             # Compute total change
-            total_change = np.sum(np.abs(gradients * diff * valid), axis=3)
+            total_change = np.sum(np.abs(gradients * valid), axis=3)
             # 1, Consider valid
             # gradient * valid
             # 2, Use CW?
-            # gradient * diff * valid
+            # gradient * diff * valid   
 
-            # every sample has a different valid mask
-            for i in range(shape[0]):
-            # Set some of the pixels to 0 depending on their total change
-            # 1, if the change is insignificant
-            valid[total_change <= 1e-5] = 0
+            # every successfully attacked sample, set 20% of the current valid waypoints to 0
+            for i in success_indices:
+                # 1, if the change is insignificant
+                insignificant_indices = list( np.where( total_change[i] <= 1e-5 ) )
+                insignificant_indices.insert(0, i)
+                valid[tuple(insignificant_indices)] = 0
+                # 2, set 20% of the current valid waypoints to 0
+                unchangable_count = np.sum(total_change[i] <= 1e-5)
+                print(unchangable_count)
+                changing_count = int( 0.2 * (total_change[i].size - unchangable_count) )
+                changing_count = max(changing_count, 1) # at least 1
+                sorted_indices = np.unravel_index(np.argsort(total_change[i], axis=None), total_change[i].shape)
+                sorted_indices = [indices[unchangable_count:unchangable_count + changing_count] 
+                                  for indices in sorted_indices]
+                sorted_indices.insert(0, i)
+                valid[tuple(sorted_indices)] = 0
 
-            # 2, set 20% of the current valid waypoints to 0
-            unchangable_count = np.sum(total_change <= 1e-5)
-            changing_count = int( 0.2 * (total_change.size - unchangable_count) )
-            sorted_indices = np.unravel_index(np.argsort(total_change, axis=None), total_change.shape)
-            sorted_indices = [indices[unchangable_count:unchangable_count + changing_count]
-                                for indices in sorted_indices]
-            valid[tuple(sorted_indices)] = 0
-
-            # if no more change happens to the valid mask
-
-            if np.abs(valid - prev_valid).sum() == 0: #
+                print(valid[i].sum())
+            
+            # Exit if the attack is not successful
+            # all successufully attacked samples have no more valid waypoints to remove
+            if np.abs(valid[success_indices] - prev_valid[success_indices]).sum() == 0:
                 break
 
         # Attack failed eventually
