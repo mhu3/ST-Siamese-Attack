@@ -1,8 +1,11 @@
 # cache
 __pycache__/
 *.pyc
+
+# scripts
+roadmap.ipynb
+temp.ipynb
 temp.py
-*.png
 
 # datasets
 dataset/*
@@ -14,3 +17,9 @@ dataset/*
 # models and logs
 models/
 logs/
+
+# others
+roadmap.ipynb
+*.sh
+*.html
+*.json
