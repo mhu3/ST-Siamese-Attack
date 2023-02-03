@@ -10,29 +10,9 @@ from fgsm_attack import FGSM
 from cw_attack import CWAttack
 
 
-def get_valid_mask(
-    samples, 
-    remove_padding=True, change_time=False, 
-    unchanged_traj_indices=[]
-):
-    """ Generate valid mask for attack """
-    valid = np.ones(samples.shape, dtype=np.int32)
-    # set padding to non changable
-    if remove_padding:
-        plates, trajs, rows = np.where(np.sum(samples, axis=3) == 0)
-        valid[plates, trajs, rows, :] = 0
-    # set time to non changable
-    if not change_time:
-        valid[:, :, :, 2] = 0
-    # change only some of the trajectories
-    if len(unchanged_traj_indices) > 0:
-        valid[:, unchanged_traj_indices, :, :] = 0
-    return valid
-
-
 def create_fgsm_attack_samples(model, samples, labels, attack_type="linf"):
     # Create attack class
-    attack = FGSM(model, batch_size=5000, n=1, eps=0.01, iteration=2)
+    attack = FGSM(model, batch_size=5000, eta=1, eps=0.01, iteration=2)
     
     # Define initial attackable mask
     # ignore padding, no time change, attack seek trajectories of one driver
@@ -54,9 +34,12 @@ def create_fgsm_attack_samples(model, samples, labels, attack_type="linf"):
 def create_cw_attack_samples(model, samples, labels, attack_type="l0"):
     
     # Create attack class
-    attack = CWAttack(model, batch_size=5000, learning_rate=0.01,
-                      max_iterations=2, initial_const=0.125/8, largest_const=1e9,
-                      binary_search_steps=20, const_factor=2.0)
+    attack = CWAttack(
+        model, batch_size=5000, eta=1, 
+        learning_rate=0.01, max_iterations=2, 
+        initial_const=0.125/8, largest_const=1e9,
+        binary_search_steps=20, const_factor=2.0
+    )
     
     # Define initial attackable mask
     # ignore padding, no time change, attack seek trajectories of one driver
@@ -74,6 +57,26 @@ def create_cw_attack_samples(model, samples, labels, attack_type="l0"):
 
     return adv_samples
     
+
+def get_valid_mask(
+    samples, 
+    remove_padding=True, change_time=False, 
+    unchanged_traj_indices=[]
+):
+    """ Generate valid mask for attack """
+    valid = np.ones(samples.shape, dtype=np.int32)
+    # set padding to non changable
+    if remove_padding:
+        plates, trajs, rows = np.where(np.sum(samples, axis=3) == 0)
+        valid[plates, trajs, rows, :] = 0
+    # set time to non changable
+    if not change_time:
+        valid[:, :, :, 2] = 0
+    # change only some of the trajectories
+    if len(unchanged_traj_indices) > 0:
+        valid[:, unchanged_traj_indices, :, :] = 0
+    return valid
+
 
 def main(opts, method, norm, tag_suffix=""):
     """ Launch attack against the model 

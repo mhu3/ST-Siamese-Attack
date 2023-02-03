@@ -7,8 +7,8 @@ from cw_attack_utils import to_tanh_space, from_tanh_space, set_with_mask
 
 class CWAttack:
     def __init__(
-        self, model, targeted=False, 
-        batch_size=256, learning_rate=0.001, max_iterations=1000, 
+        self, model, targeted=False, batch_size=256, 
+        eta = 1, learning_rate=0.001, max_iterations=1000, 
         abort_early=True, 
         initial_const=0.001, largest_const=1e9, 
         binary_search_steps=5, const_factor=2.0
@@ -18,6 +18,7 @@ class CWAttack:
             model: Instance of the Model class
             targeted: True if we should perform a targetted attack, False otherwise.
             batch_size: Number of attacks to run simultaneously.
+            eta: linf constraint
             learning_rate: The learning rate for the attack algorithm. Smaller values
                            produce better results but are slower to converge.
             max_iterations: The maximum number of iterations to perform gradient descent. 
@@ -39,6 +40,7 @@ class CWAttack:
         self.targeted = targeted
         self.batch_size = batch_size
 
+        self.eta = eta
         self.learning_rate = learning_rate
         self.max_iterations = max_iterations
         
@@ -77,12 +79,11 @@ class CWAttack:
             x_new = set_with_mask(x_original, x_new, valid_mask)   
 
             # Clip to make sure the difference is within 
-            # [-n/49, n/49] for x and [-n/92, n/92] for y
-            n = 2
+            # [-eta/49, eta/49] for x and [-eta/92, eta/92] for y
             diff = x_new - x_original
             diff_x, diff_y, diff_t = tf.split(diff, 3, axis=3)
-            diff_x = tf.clip_by_value(diff_x, -n/49, n/49)
-            diff_y = tf.clip_by_value(diff_y, -n/92, n/92)
+            diff_x = tf.clip_by_value(diff_x, -self.eta/49, self.eta/49)
+            diff_y = tf.clip_by_value(diff_y, -self.eta/92, self.eta/92)
             diff = tf.concat([diff_x, diff_y, diff_t], axis=3)
             x_new = x_original + diff
 
