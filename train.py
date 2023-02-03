@@ -28,7 +28,7 @@ def train(opts, tag_suffix="", retrain=False):
         pass  #TODO to be generated
     elif opts.traj_type == 'all':
         X_train, y_train = load_data(opts.data_path + 'training_set.pkl')  
-        X_val, y_val = load_data(opts.data_path + 'validating_set.pkl')
+        X_val, y_val = load_data(opts.data_path + 'validation_set.pkl')
         X_test_seen, y_test_seen = load_data(opts.data_path + 'testing_set_seen.pkl')
         X_test_unseen, y_test_unseen = load_data(opts.data_path + 'testing_set_unseen.pkl')
     # normalize data
