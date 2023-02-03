@@ -7,7 +7,7 @@ from utils import create_dir, load_data, normalize_trajectory_data, set_seed
 from models import build_lstm, load_model
 
 
-def train(opts, tag_suffix="class", retrain=False):
+def train(opts, tag_suffix="_class", retrain=False):
     """ Load data, model and train the model. """
     # Checking parameters
     assert(opts.traj_type in ['seek', 'serve', 'all'])
