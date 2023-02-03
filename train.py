@@ -72,7 +72,11 @@ def train(opts, tag_suffix="", retrain=False):
         X_train, y_train, 
         batch_size=opts.batch_size, epochs=opts.epochs,
         callbacks=callbacks,
+<<<<<<< HEAD
         validation_data=[X_val, y_val], 
+=======
+        validation_data = [X_val, y_val], 
+>>>>>>> 2a2e52987919926d86e89add775b3b825583e501
     )
 
     # Start testing
