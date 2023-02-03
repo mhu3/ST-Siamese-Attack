@@ -1,91 +1,99 @@
-import logging
-import pickle, bz2
 import numpy as np
 import tensorflow as tf
-# from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split
 
 from argument import create_parser
-from utils import create_dir, load_data, get_trajectories, get_trajectory_pair_sample
-from models import build_lstm_siamese
+from utils import create_dir, load_data, normalize_trajectory_data, set_seed
+from models import build_lstm, load_model
 
 
-def get_classification_pair_samples(raw_trajs, plates, selected_plates, selected_days, 
-                                    test_plate, test_day,
-                                    traj_type='all', num_trajs=10, padding_length=60):
-    """Get classification pair samples for a given plate index."""
-    
-    # 
-
-    # Get trajectory pair of the given plate
-    X = []
-    num_samples = len(selected_plates) * len(selected_days)
-    for i in range(num_samples):
-        # continuously select one driver
-        plate_idx1 = test_plate
-        plate_idx2 = selected_plates[i // len(selected_days)]
-        # continuously select two different days
-        selected_day1 = test_day
-        selected_day2 = selected_days[i % len(selected_days)]
-
-        # get one trajectory pair sample
-        sample = get_trajectory_pair_sample(raw_trajs, plates, 
-                                            plate_idx1, plate_idx2, selected_day1, selected_day2,
-                                            traj_type, num_trajs, padding_length)
-        X.append(sample)
-    return np.array(X)
-
-
-def main(opts):
-    """Load data, model and train the model."""
-    # Checking
+def train(opts, tag_suffix="class", retrain=False):
+    """ Load data, model and train the model. """
+    # Checking parameters
     assert(opts.traj_type in ['seek', 'serve', 'all'])
 
     # Create directories for model and log
     create_dir(opts.log_path)
     create_dir(opts.model_path)
-    # Prepare logging file
+    # prepare file naming
     tag = str(opts.num_plates) + '_plates_' + \
           str(opts.num_days) +  '_days_' + \
           str(opts.traj_type) + '_traj' + \
-          "_3"
-    logging.basicConfig(level = logging.INFO,
-                        format = '%(asctime)s %(levelname)s %(message)s',
-                        filename = opts.log_path + 'log_' + tag + '.log',
-                        filemode = 'a')
+          tag_suffix  # for different conditions
+    
+    # Load data
+    # load trajectory
+    if opts.traj_type == 'seek':
+        pass  #TODO To be generated
+    elif opts.traj_type == 'serve':
+        pass  #TODO To be generated
+    elif opts.traj_type == 'all':
+        X_train, y_train = load_data(opts.data_path + 'classification_training_set.pkl') 
+        X_val, y_val = load_data(opts.data_path + 'classification_validation_set.pkl') 
+        X_test, y_test = load_data(opts.data_path + 'classification_testing_set.pkl')
+    # Normalize data
+    X_train = normalize_trajectory_data(X_train)
+    X_val = normalize_trajectory_data(X_val)
+    X_test = normalize_trajectory_data(X_test)
+    # one-hot encoding
+    num_class = np.unique(y_train).shape[0]
+    y_train = tf.keras.utils.to_categorical(y_train, num_classes=num_class)
+    y_val = tf.keras.utils.to_categorical(y_val, num_classes=num_class)
+    y_test = tf.keras.utils.to_categorical(y_test, num_classes=num_class)
 
-    # Load original data
-    raw_trajs = pickle.load(open('./dataset/trajs_without_speed500.pkl', 'rb'))
-    plates = pickle.load(open('./dataset/plates.pkl', 'rb'))
-
-    # Load trained model
-    model = tf.keras.models.load_model(opts.model_path + 'model_' + tag + '_best.h5')
+    # Train from a new model
+    if not retrain:
+        num_traj_feature = 3 if not opts.with_speed else 4
+        model = build_lstm(
+            num_class=num_class,
+            num_trajs=opts.num_trajs, 
+            padding_length=opts.padding_length, 
+            num_traj_feature=num_traj_feature,
+            traj_type=opts.traj_type
+        )
+    # Continue training
+    else:
+        model = load_model(opts.model_path + 'model_' + tag + '_best.h5')
     model.summary()
 
-    # Start testing
-    acc_count = 0
-    # selected_plates = np.arange(opts.num_plates)
-    # selected_days = np.arange(opts.num_days)
-    selected_plates = np.random.randint(0, opts.num_plates, 10)
-    selected_days = np.arange(opts.num_days)
-    for test_plate in selected_plates:
-        # get paried classfication test samples
-        samples = get_classification_pair_samples(raw_trajs, plates, selected_plates, selected_days,
-                                                  test_plate, test_day=9,
-                                                  traj_type=opts.traj_type, num_trajs=opts.num_trajs, 
-                                                  padding_length=opts.padding_length)
-        yhat = model.predict(samples, batch_size=512)
-        # get the mean of similarity score of each plate
-        yhat = yhat.reshape(len(selected_plates), len(selected_days)).mean(axis=1)
-        print(yhat)
-        # check accuracy
-        if selected_plates[yhat.argmax()] == test_plate:
-            acc_count += 1
+    # Start training
+    callbacks = [
+        tf.keras.callbacks.CSVLogger(
+            opts.log_path + 'log_' + tag + '.csv', separator=",", append=True
+        ),  # log training history
+        tf.keras.callbacks.ModelCheckpoint(
+            opts.model_path + 'model_' + tag + '_best.h5',
+            monitor='val_loss', save_best_only=True
+        ),  # save the best model
+        tf.keras.callbacks.ModelCheckpoint(
+            opts.model_path + 'model_' + tag + '_last.h5',
+            monitor='val_loss', save_freq="epoch"
+        ),  # save the latest model
+    ]
 
-    # print testing accuracy and loss
-    logging.info("Classification accuracy: {0}".format(acc_count / len(selected_plates)))
+    # TODO Hyperparameters used in classification but not siamese
+    EPOCH = 100
+    BATCH_SIZE = 16
+    model.fit(
+        X_train, y_train, 
+        batch_size=BATCH_SIZE, epochs=EPOCH,
+        callbacks=callbacks,
+        validation_data=[X_val, y_val], 
+    )
+    
+    # Start testing
+    # load best model
+    model = load_model(opts.model_path + 'model_' + tag + '_best.h5')
+    # test
+    model.evaluate(X_test, y_test, batch_size=5000)
 
 
 if __name__ == '__main__':
+    # Load arguments
     parser = create_parser()
     opts = parser.parse_args()
-    main(opts)
+    # Set random seed
+    set_seed(1)
+
+    # Run training
+    train(opts)
