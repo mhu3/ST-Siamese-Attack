@@ -15,9 +15,9 @@ In this paper, we aim to improve the robustness of the HuMID model by generating
 ## Usage
 - Execute ```python classification.py``` to train the multi-classification model.
 - Execute ```python train.py``` to train ST-siamese model.
-- Execute ```python classification_attack.py`` to attack the multi-classification model
-- Execute ```python siamese_attack.py`` to attack the ST-Siamese model
-- Execute ```python fast_adversarial_train.py`` to do Fast ST-FGSM adversarial train
+- Execute ```python classification_attack.py``` to attack the multi-classification model
+- Execute ```python siamese_attack.py``` to attack the ST-Siamese model
+- Execute ```python fast_adversarial_train.py``` to do Fast ST-FGSM adversarial train
 
 
 ## File structure and description
