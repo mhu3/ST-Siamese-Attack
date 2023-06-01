@@ -1,11 +1,8 @@
-# ST-iFGSM : Enhancing the robustness of the HuMID model
+# ST-iFGSM: Enhancing Robustness of Human Mobility Signature Identification Model via Spatial-Temporal Iterative FGSM
 
-This project TODO
+This repository contains a Keras implementation of the algorithm presented in the paper ST-iFGSM: Enhancing Robustness of Human Mobility Signature Identification Model via Spatial-Temporal Iterative FGSM
 
-It contains
-
-- CW-attack and FGSM-attack on ST-Siamese and LSTM-based classification networks.
-- TODO
+In this paper, we aim to improve the robustness of the HuMID model by generating useful adversarial trajectories for further training the model. To accomplish this, we design a Spatial Temporal iterative Fast Gradient Sign Method with 𝐿0 regularization – ST-iFGSM – to generate adversarial attacks on state-of-the-art (SOTA) HuMID models. 
 
 
 ## Prerequisites
@@ -14,8 +11,7 @@ TODO
 
 
 ## Usage
----
-TODO
+
 
 
 ## File structure and description
