@@ -26,7 +26,7 @@ The solution framework takes the human mobility dataset and a target HuMID model
 - Execute ```python fast_adversarial_train.py``` to do Fast ST-FGSM adversarial train
 
 
-## File structure and description
+<!-- ## File structure and description
 ```
 ST-Siamese-Attack
 
@@ -45,14 +45,14 @@ fast_adversarial_train.py              # Main file:
                                          Fast ST-FGSM adversarial train
 -----------------------------------
 data_generation.ipynb                  # Generate data for siamese
-classification_data_generation.ipynb   # Generate data for classification
+classification_data_generation.ipynb   # Generate data for classification -->
 
------------------------------------
-argument.py                            # Argument script
+<!-- ----------------------------------- -->
+<!-- argument.py                            # Argument script
 utils.py                               # Utility script
 dataset                                # Dataset folder
 │   ├── ...
 models                                 # Model folder
 │   ├── ...
-README
-```
+README -->
+``` -->
