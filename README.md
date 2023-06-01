@@ -6,8 +6,10 @@ In this paper, we aim to improve the robustness of the HuMID model by generating
 
 
 ## Prerequisites
----
-TODO
+- [Python 3.9.12](https://www.continuum.io/downloads)
+- [Keras 2.10.0](https://keras.io/)
+- [Tensorflow 2.10.1](https://www.tensorflow.org/)
+- GPU for fast training
 
 
 ## Usage
