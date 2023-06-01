@@ -4,8 +4,10 @@ This repository contains a Keras implementation of the algorithm presented in th
 
 In this paper, we aim to improve the robustness of the HuMID model by generating useful adversarial trajectories for further training the model. To accomplish this, we design a Spatial Temporal iterative Fast Gradient Sign Method with 𝐿0 regularization – ST-iFGSM – to generate adversarial attacks on state-of-the-art (SOTA) HuMID models. 
 
+The solution framework takes the human mobility dataset and a target HuMID model as inputs and contains two stages: Stage 1. iteratively generating and selecting adversarial attack samples which could fool the target HuMID model, and Stage 2. training the HuMID model with the adversarial attack to improve the model robustness.
+
 <p align="center">
-<img src="/resources/framework.pdf." alt="ST-iFGSM L0 framework" height="350">
+<img src="/resource/framework.png" alt="ST-iFGSM L0 framework" height="350">
 </p>
 
 
