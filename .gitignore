@@ -6,6 +6,10 @@ __pycache__/
 roadmap.ipynb
 temp.ipynb
 temp.py
+cw_adversarial_train.py
+fast_adversarial_train_l2.py
+models2.py
+
 
 # datasets
 dataset/*
